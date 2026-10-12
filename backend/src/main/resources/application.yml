@@ -9,6 +9,9 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  datasource:
+    hikari:
+      connection-init-sql: "SET lock_timeout = '3s'"
   jpa:
     open-in-view: false
     hibernate:

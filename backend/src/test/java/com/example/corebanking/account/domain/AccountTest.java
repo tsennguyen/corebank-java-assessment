@@ -135,4 +135,77 @@ class AccountTest {
                                         .isEqualTo(ErrorCode.ACCOUNT_HAS_BALANCE))
                 .hasMessageContaining("Account balance must be zero before closing");
     }
+
+    @Test
+    @DisplayName("credit() increases balance when account is ACTIVE")
+    void credit_whenAccountActive_shouldIncreaseBalance() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+
+        account.credit(com.example.corebanking.common.domain.Money.of("1500000.00"));
+        assertThat(account.getBalance()).isEqualByComparingTo("1500000.00");
+
+        account.credit(com.example.corebanking.common.domain.Money.of("500000.00"));
+        assertThat(account.getBalance()).isEqualByComparingTo("2000000.00");
+    }
+
+    @Test
+    @DisplayName("credit() throws VALIDATION_FAILED when amount is zero or negative")
+    void credit_whenAmountZeroOrNegative_shouldThrowValidationFailed() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+
+        assertThatThrownBy(() -> account.credit(com.example.corebanking.common.domain.Money.zero()))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+        assertThatThrownBy(
+                        () ->
+                                account.credit(
+                                        com.example.corebanking.common.domain.Money.of(
+                                                "-50000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.VALIDATION_FAILED));
+    }
+
+    @Test
+    @DisplayName("credit() throws ACCOUNT_NOT_ACTIVE when account is closed")
+    void credit_whenAccountClosed_shouldThrowAccountNotActive() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+
+        account.close(Instant.parse("2026-10-09T08:00:00Z"));
+
+        assertThatThrownBy(
+                        () ->
+                                account.credit(
+                                        com.example.corebanking.common.domain.Money.of(
+                                                "100000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE));
+    }
 }

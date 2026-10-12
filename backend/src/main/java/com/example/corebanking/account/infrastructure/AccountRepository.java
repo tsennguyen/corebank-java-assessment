@@ -2,9 +2,13 @@ package com.example.corebanking.account.infrastructure;
 
 import com.example.corebanking.account.domain.Account;
 import com.example.corebanking.account.domain.AccountStatus;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 /** Spring Data JPA repository for Account entity with Specification support. */
@@ -17,4 +21,8 @@ public interface AccountRepository
     boolean existsByCustomerIdAndStatusNot(Long customerId, AccountStatus status);
 
     Optional<Account> findByAccountNumber(String accountNumber);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT a FROM Account a WHERE a.id = :id")
+    Optional<Account> findByIdForUpdate(@Param("id") Long id);
 }
