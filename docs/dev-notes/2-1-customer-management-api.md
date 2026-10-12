@@ -11,5 +11,6 @@
 - **Vì sao làm vậy:** Quản lý thông tin khách hàng là nền tảng cốt lõi của ngân hàng. Sử dụng xóa mềm để bảo toàn tính toàn vẹn dữ liệu cho các báo cáo kiểm toán và giao dịch sau này.
 - **Phương án khác đã cân nhắc:** Xóa cứng (hard-delete) bản ghi trong DB; lý do không chọn: vi phạm tính toàn vẹn lịch sử giao dịch và chuẩn kiểm toán tài chính.
 - **Bẫy cần nhớ:** CCCD gửi lên bắt buộc bắt đầu bằng `000` (giả lập), không chấp nhận CCCD người thật.
+- **Quyết định về CCCD:** `national_id` là `UNIQUE` trên toàn bảng, kể cả khách đã xóa mềm. Lý do: giữ vết định danh (KYC) không bị trùng lặp; một người quay lại thì khôi phục hồ sơ cũ thay vì tạo hồ sơ mới. Đánh đổi: không tạo được hồ sơ mới cùng CCCD sau khi xóa.
 - **Cách chạy/test:**
   - `./mvnw test -Dtest=CustomerControllerTest,CustomerServiceTest,CustomerTest`
