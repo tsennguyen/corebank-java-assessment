@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -129,6 +130,24 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("should return 409 ProblemDetail when CannotAcquireLockException is thrown")
+    void cannotAcquireLockException_returns409WithLockTimeout() throws Exception {
+        mockMvc.perform(get("/api/v1/test-errors/lock-timeout"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("LOCK_TIMEOUT"))
+                .andExpect(jsonPath("$.type").value("urn:problem-type:lock-timeout"))
+                .andExpect(jsonPath("$.title").value("Resource lock acquisition timed out"))
+                .andExpect(
+                        jsonPath("$.detail")
+                                .value(
+                                        "Resource lock acquisition timed out. Please retry the"
+                                                + " transaction."))
+                .andExpect(jsonPath("$.requestId").isNotEmpty())
+                .andExpect(jsonPath("$.timestamp").isNotEmpty());
+    }
+
+    @Test
     @DisplayName("should return 500 ProblemDetail without leaking stack trace on unexpected errors")
     void unexpectedException_returns500AndMasksInternalDetails() throws Exception {
         mockMvc.perform(get("/api/v1/test-errors/internal-error"))
@@ -187,6 +206,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/duplicate")
         public String testDuplicate() {
             throw new DuplicateResourceException("Account number already exists");
+        }
+
+        @GetMapping("/lock-timeout")
+        public String testLockTimeout() {
+            throw new CannotAcquireLockException("canceling statement due to lock timeout");
         }
 
         @GetMapping("/internal-error")

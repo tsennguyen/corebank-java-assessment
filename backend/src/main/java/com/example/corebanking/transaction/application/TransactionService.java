@@ -146,13 +146,19 @@ public class TransactionService {
     }
 
     private Pageable resolvePageable(Pageable pageable) {
-        if (pageable.getSort().isUnsorted()) {
-            return PageRequest.of(
-                    pageable.getPageNumber(),
-                    pageable.getPageSize(),
-                    Sort.by(Sort.Direction.DESC, "createdAt"));
+        Sort sort = pageable.getSort();
+        if (sort.isUnsorted()) {
+            sort = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+        } else {
+            boolean hasIdSort = sort.stream().anyMatch(order -> "id".equals(order.getProperty()));
+            if (!hasIdSort) {
+                sort = sort.and(Sort.by(Sort.Order.desc("id")));
+            }
         }
-        return pageable;
+        if (pageable.isUnpaged()) {
+            return Pageable.unpaged(sort);
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
     }
 
     private void validatePaginationAndSort(Pageable pageable) {

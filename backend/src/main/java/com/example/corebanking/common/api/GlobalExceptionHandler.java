@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -140,6 +141,29 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
 
         log.warn("Optimistic locking conflict [requestId={}]: {}", requestId, ex.getMessage());
+        return ResponseEntity.status(status).body(problemDetail);
+    }
+
+    /** Handles pessimistic locking and database lock acquisition timeouts. */
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<ProblemDetail> handlePessimisticLockingFailure(
+            PessimisticLockingFailureException ex, WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        ErrorCode errorCode = ErrorCode.LOCK_TIMEOUT;
+        HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        status,
+                        "Resource lock acquisition timed out. Please retry the transaction.");
+        problemDetail.setTitle(errorCode.getDefaultTitle());
+        problemDetail.setType(URI.create(errorCode.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, errorCode.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+
+        log.warn("Pessimistic lock timeout [requestId={}]: {}", requestId, ex.getMessage());
         return ResponseEntity.status(status).body(problemDetail);
     }
 

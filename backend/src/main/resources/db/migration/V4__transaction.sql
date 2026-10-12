@@ -30,4 +30,3 @@ CREATE INDEX IF NOT EXISTS idx_tx_source_created ON core.transaction (source_acc
 CREATE INDEX IF NOT EXISTS idx_tx_target_created ON core.transaction (target_account_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tx_created ON core.transaction (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tx_type_created ON core.transaction (type, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_tx_reference_no ON core.transaction (reference_no);

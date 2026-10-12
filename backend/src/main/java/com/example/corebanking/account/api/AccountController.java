@@ -6,8 +6,6 @@ import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.application.AccountService;
 import com.example.corebanking.account.domain.AccountStatus;
 import com.example.corebanking.common.api.PageResponse;
-import com.example.corebanking.transaction.api.dto.TransactionResponse;
-import com.example.corebanking.transaction.application.TransactionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
@@ -42,11 +40,9 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 public class AccountController {
 
     private final AccountService accountService;
-    private final TransactionService transactionService;
 
-    public AccountController(AccountService accountService, TransactionService transactionService) {
+    public AccountController(AccountService accountService) {
         this.accountService = accountService;
-        this.transactionService = transactionService;
     }
 
     @PostMapping
@@ -189,34 +185,5 @@ public class AccountController {
                     Long id) {
         accountService.closeAccount(id);
         return ResponseEntity.noContent().build();
-    }
-
-    @GetMapping("/{id}/transactions")
-    @Operation(
-            summary = "Lấy lịch sử giao dịch của tài khoản",
-            description =
-                    "Truy vấn danh sách giao dịch nguồn và đích của tài khoản có phân trang và sắp"
-                            + " xếp.")
-    @ApiResponses({
-        @ApiResponse(
-                responseCode = "200",
-                description = "Danh sách giao dịch thành công",
-                content = @Content(schema = @Schema(implementation = PageResponse.class))),
-        @ApiResponse(
-                responseCode = "400",
-                description = "Trường sắp xếp không hợp lệ hoặc kích thước trang vượt quá 100",
-                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
-        @ApiResponse(
-                responseCode = "404",
-                description = "Không tìm thấy tài khoản",
-                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
-    })
-    public ResponseEntity<PageResponse<TransactionResponse>> getAccountTransactions(
-            @Parameter(description = "ID nội bộ của tài khoản", example = "1") @PathVariable
-                    Long id,
-            @ParameterObject
-                    @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
-                    Pageable pageable) {
-        return ResponseEntity.ok(transactionService.getAccountTransactions(id, pageable));
     }
 }

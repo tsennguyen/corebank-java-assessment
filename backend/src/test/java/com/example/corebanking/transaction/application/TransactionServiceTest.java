@@ -198,6 +198,44 @@ class TransactionServiceTest {
     }
 
     @Test
+    @DisplayName("getAccountTransactions() without sort defaults to createdAt DESC, id DESC")
+    void getAccountTransactions_withoutSort_shouldDefaultToCreatedAtDescAndIdDesc() {
+        when(accountRepository.existsById(1L)).thenReturn(true);
+        Pageable unsorted = PageRequest.of(0, 20);
+        when(transactionRepository.findByAccountId(eq(1L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        transactionService.getAccountTransactions(1L, unsorted);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(transactionRepository).findByAccountId(eq(1L), captor.capture());
+        Sort sort = captor.getValue().getSort();
+        assertThat(sort.getOrderFor("createdAt")).isNotNull();
+        assertThat(sort.getOrderFor("createdAt").getDirection()).isEqualTo(Sort.Direction.DESC);
+        assertThat(sort.getOrderFor("id")).isNotNull();
+        assertThat(sort.getOrderFor("id").getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
+    @DisplayName("getAccountTransactions() with amount sort appends id DESC tie-breaker")
+    void getAccountTransactions_withAmountSort_shouldAppendIdDesc() {
+        when(accountRepository.existsById(1L)).thenReturn(true);
+        Pageable amountSorted = PageRequest.of(0, 20, Sort.by(Sort.Direction.ASC, "amount"));
+        when(transactionRepository.findByAccountId(eq(1L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        transactionService.getAccountTransactions(1L, amountSorted);
+
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(transactionRepository).findByAccountId(eq(1L), captor.capture());
+        Sort sort = captor.getValue().getSort();
+        assertThat(sort.getOrderFor("amount")).isNotNull();
+        assertThat(sort.getOrderFor("amount").getDirection()).isEqualTo(Sort.Direction.ASC);
+        assertThat(sort.getOrderFor("id")).isNotNull();
+        assertThat(sort.getOrderFor("id").getDirection()).isEqualTo(Sort.Direction.DESC);
+    }
+
+    @Test
     @DisplayName("searchTransactions() rejects invalid sort fields")
     void searchTransactions_withInvalidSortField_shouldThrowInvalidSortField() {
         Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.ASC, "invalidField"));
