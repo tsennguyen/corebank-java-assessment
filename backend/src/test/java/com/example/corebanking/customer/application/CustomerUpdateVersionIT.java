@@ -131,7 +131,7 @@ class CustomerUpdateVersionIT extends IntegrationTestBase {
         // Attempt to update limits on CLOSED account -> must throw INVALID_STATUS_TRANSITION (409)
         UpdateAccountLimitsRequest updateClosed =
                 new UpdateAccountLimitsRequest(
-                        new BigDecimal("40000000.00"), new BigDecimal("70000000.00"), 1L);
+                        new BigDecimal("40000000.00"), new BigDecimal("70000000.00"), 2L);
         assertThatThrownBy(() -> accountService.updateLimits(accountId, updateClosed))
                 .isInstanceOf(BusinessRuleException.class)
                 .satisfies(

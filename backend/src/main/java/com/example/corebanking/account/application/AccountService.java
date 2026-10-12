@@ -133,6 +133,12 @@ public class AccountService {
                         .findById(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Account", id));
 
+        if (account.isClosed()) {
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Cannot update limits on a closed account");
+        }
+
         if (!account.getVersion().equals(request.version())) {
             log.warn(
                     "Optimistic concurrency conflict on account [id={}]: expected version={},"
