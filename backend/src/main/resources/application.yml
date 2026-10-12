@@ -1,8 +1,6 @@
 spring:
   application:
     name: core-banking
-  profiles:
-    active: local
   threads:
     virtual:
       enabled: true
@@ -19,8 +17,6 @@ spring:
     properties:
       hibernate:
         default_schema: core
-        jdbc:
-          batch_size: 25
   flyway:
     enabled: true
     schemas: core
@@ -53,7 +49,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info
   endpoint:
     health:
       show-details: when_authorized

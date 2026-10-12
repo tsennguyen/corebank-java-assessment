@@ -161,4 +161,28 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway V5 drops the redundant account_number index but keeps the unique constraint")
+    void flywayMigration_v5_dropsRedundantAccountNumberIndex() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT count(*) FROM pg_indexes WHERE schemaname = 'core'"
+                                    + " AND indexname = 'idx_account_number'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).isZero();
+            }
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT count(*) FROM pg_indexes WHERE schemaname = 'core' AND"
+                                + " tablename = 'account' AND indexdef LIKE 'CREATE UNIQUE%' AND"
+                                + " indexdef LIKE '%(account_number)%'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getInt(1)).isEqualTo(1);
+            }
+        }
+    }
 }
