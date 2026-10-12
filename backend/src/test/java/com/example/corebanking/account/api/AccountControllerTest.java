@@ -28,6 +28,10 @@ import com.example.corebanking.common.config.ClockConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
+import com.example.corebanking.transaction.api.dto.TransactionResponse;
+import com.example.corebanking.transaction.application.TransactionService;
+import com.example.corebanking.transaction.domain.TransactionStatus;
+import com.example.corebanking.transaction.domain.TransactionType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -51,6 +55,7 @@ class AccountControllerTest {
     @Autowired private ObjectMapper objectMapper;
 
     @MockBean private AccountService accountService;
+    @MockBean private TransactionService transactionService;
 
     private AccountResponse createResponse(
             Long id,
@@ -291,5 +296,39 @@ class AccountControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.code").value("ACCOUNT_HAS_BALANCE"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/accounts/{id}/transactions returns 200 with paginated transactions")
+    void getAccountTransactions_shouldReturn200() throws Exception {
+        TransactionResponse tx =
+                new TransactionResponse(
+                        1L,
+                        "TXN-20261012-ABC123DEF456",
+                        TransactionType.DEPOSIT,
+                        TransactionStatus.COMPLETED,
+                        new BigDecimal("1500000.00"),
+                        BigDecimal.ZERO,
+                        null,
+                        10L,
+                        null,
+                        new BigDecimal("1500000.00"),
+                        new BigDecimal("1500000.00"),
+                        "Hà Nội",
+                        "Nạp tiền",
+                        Instant.parse("2026-10-12T14:00:00Z"));
+
+        PageResponse<TransactionResponse> pageResponse =
+                new PageResponse<>(List.of(tx), 0, 20, 1L, 1);
+
+        when(transactionService.getAccountTransactions(eq(10L), any(Pageable.class)))
+                .thenReturn(pageResponse);
+
+        mockMvc.perform(get("/api/v1/accounts/10/transactions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(1)))
+                .andExpect(jsonPath("$.content[0].referenceNo").value("TXN-20261012-ABC123DEF456"))
+                .andExpect(jsonPath("$.content[0].type").value("DEPOSIT"))
+                .andExpect(jsonPath("$.totalElements").value(1));
     }
 }

@@ -128,4 +128,37 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V4 transaction migration successfully creating transaction table and"
+                    + " indexes")
+    void flywayMigration_shouldApplyV4TransactionMigrationSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection()) {
+            // Verify migration version 4 record in core.flyway_schema_history
+            try (Statement statement = connection.createStatement();
+                    ResultSet rs =
+                            statement.executeQuery(
+                                    "SELECT version, description, type, script, success "
+                                            + "FROM core.flyway_schema_history "
+                                            + "WHERE version = '4'")) {
+                assertThat(rs.next())
+                        .as("Migration version 4 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("version")).isEqualTo("4");
+                assertThat(rs.getString("description")).isEqualTo("transaction");
+                assertThat(rs.getString("type")).isEqualTo("SQL");
+                assertThat(rs.getString("script")).isEqualTo("V4__transaction.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            // Verify table 'transaction' exists inside schema 'core'
+            try (ResultSet rs =
+                    connection.getMetaData().getTables(null, "core", "transaction", null)) {
+                assertThat(rs.next())
+                        .as("Table 'transaction' should exist in schema 'core'")
+                        .isTrue();
+            }
+        }
+    }
 }

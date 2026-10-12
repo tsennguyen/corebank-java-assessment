@@ -3,6 +3,7 @@ package com.example.corebanking.account.domain;
 import com.example.corebanking.common.domain.BaseEntity;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
+import com.example.corebanking.common.domain.Money;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -128,6 +129,25 @@ public class Account extends BaseEntity {
 
     public boolean isClosed() {
         return this.status == AccountStatus.CLOSED;
+    }
+
+    /**
+     * Credits (deposits) funds into the account. Enforces that the account is active and the amount
+     * is positive.
+     */
+    public void credit(Money depositAmount) {
+        Objects.requireNonNull(depositAmount, "depositAmount must not be null");
+        if (!depositAmount.isPositive()) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED, "Deposit amount must be greater than zero");
+        }
+        if (!isActive()) {
+            throw new BusinessRuleException(
+                    ErrorCode.ACCOUNT_NOT_ACTIVE,
+                    "Cannot credit account in status: " + this.status);
+        }
+        this.balance =
+                this.balance.add(depositAmount.getAmount()).setScale(2, RoundingMode.HALF_UP);
     }
 
     private void validateAndSetLimits(BigDecimal transactionLimit, BigDecimal dailyLimit) {
