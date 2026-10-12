@@ -5,6 +5,7 @@ import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.DuplicateResourceException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
+import com.example.corebanking.common.util.MaskingUtils;
 import com.example.corebanking.customer.api.dto.CreateCustomerRequest;
 import com.example.corebanking.customer.api.dto.CustomerResponse;
 import com.example.corebanking.customer.api.dto.UpdateCustomerRequest;
@@ -13,12 +14,13 @@ import com.example.corebanking.customer.infrastructure.CustomerCodeGenerator;
 import com.example.corebanking.customer.infrastructure.CustomerRepository;
 import com.example.corebanking.customer.infrastructure.CustomerSpecifications;
 import java.time.Clock;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -40,25 +42,20 @@ public class CustomerService {
     private final CustomerRepository customerRepository;
     private final CustomerCodeGenerator customerCodeGenerator;
     private final Clock clock;
-    private final Optional<CustomerDeletionGuard> customerDeletionGuard;
+    private final CustomerDeletionGuard customerDeletionGuard;
 
     @Autowired
     public CustomerService(
             CustomerRepository customerRepository,
             CustomerCodeGenerator customerCodeGenerator,
             Clock clock,
-            Optional<CustomerDeletionGuard> customerDeletionGuard) {
+            CustomerDeletionGuard customerDeletionGuard) {
         this.customerRepository = customerRepository;
         this.customerCodeGenerator = customerCodeGenerator;
         this.clock = clock;
-        this.customerDeletionGuard = customerDeletionGuard;
-    }
-
-    public CustomerService(
-            CustomerRepository customerRepository,
-            CustomerCodeGenerator customerCodeGenerator,
-            Clock clock) {
-        this(customerRepository, customerCodeGenerator, clock, Optional.empty());
+        this.customerDeletionGuard =
+                Objects.requireNonNull(
+                        customerDeletionGuard, "customerDeletionGuard must not be null");
     }
 
     /**
@@ -72,7 +69,7 @@ public class CustomerService {
         if (customerRepository.existsByNationalId(request.nationalId())) {
             log.warn(
                     "Attempted to register customer with duplicate nationalId: {}",
-                    request.nationalId());
+                    MaskingUtils.nationalId(request.nationalId()));
             throw new DuplicateResourceException("Customer with national ID already exists");
         }
 
@@ -118,14 +115,15 @@ public class CustomerService {
      */
     public PageResponse<CustomerResponse> searchCustomers(
             String name, String location, Pageable pageable) {
-        validatePaginationAndSort(pageable);
+        Pageable effectivePageable = resolvePageable(pageable);
+        validatePaginationAndSort(effectivePageable);
 
         Specification<Customer> spec =
                 CustomerSpecifications.activeOnly()
                         .and(CustomerSpecifications.withName(name))
                         .and(CustomerSpecifications.withLocation(location));
 
-        Page<Customer> page = customerRepository.findAll(spec, pageable);
+        Page<Customer> page = customerRepository.findAll(spec, effectivePageable);
         return PageResponse.from(page, CustomerResponse::from);
     }
 
@@ -167,7 +165,7 @@ public class CustomerService {
                 request.location(),
                 request.dateOfBirth());
 
-        Customer updated = customerRepository.save(customer);
+        Customer updated = customerRepository.saveAndFlush(customer);
         log.info(
                 "Updated customer [id={}, code={}, version={}]",
                 updated.getId(),
@@ -188,7 +186,7 @@ public class CustomerService {
                         .findByIdAndDeletedAtIsNull(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Customer", id));
 
-        customerDeletionGuard.ifPresent(guard -> guard.validateCanDeleteCustomer(id));
+        customerDeletionGuard.validateCanDeleteCustomer(id);
 
         customer.softDelete(clock.instant());
         customerRepository.save(customer);
@@ -196,6 +194,22 @@ public class CustomerService {
                 "Soft-deleted customer [id={}, code={}]",
                 customer.getId(),
                 customer.getCustomerCode());
+    }
+
+    private Pageable resolvePageable(Pageable pageable) {
+        Sort sort = pageable.getSort();
+        if (sort.isUnsorted()) {
+            sort = Sort.by(Sort.Order.desc("id"));
+        } else {
+            boolean hasIdSort = sort.stream().anyMatch(order -> "id".equals(order.getProperty()));
+            if (!hasIdSort) {
+                sort = sort.and(Sort.by(Sort.Order.desc("id")));
+            }
+        }
+        if (pageable.isUnpaged()) {
+            return Pageable.unpaged(sort);
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
     }
 
     private void validatePaginationAndSort(Pageable pageable) {

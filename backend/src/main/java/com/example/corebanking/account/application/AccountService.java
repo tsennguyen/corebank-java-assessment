@@ -4,9 +4,9 @@ import com.example.corebanking.account.api.dto.AccountResponse;
 import com.example.corebanking.account.api.dto.CreateAccountRequest;
 import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.domain.Account;
-import com.example.corebanking.account.domain.AccountNumberGenerator;
 import com.example.corebanking.account.domain.AccountStatus;
 import com.example.corebanking.account.domain.BalanceTierPolicy;
+import com.example.corebanking.account.infrastructure.AccountNumberGenerator;
 import com.example.corebanking.account.infrastructure.AccountRepository;
 import com.example.corebanking.account.infrastructure.AccountSpecifications;
 import com.example.corebanking.common.api.PageResponse;
@@ -20,6 +20,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -108,14 +109,15 @@ public class AccountService {
     /** Searches accounts matching filters with pagination and sorting. */
     public PageResponse<AccountResponse> searchAccounts(
             Long customerId, AccountStatus status, String accountNumber, Pageable pageable) {
-        validatePaginationAndSort(pageable);
+        Pageable effectivePageable = resolvePageable(pageable);
+        validatePaginationAndSort(effectivePageable);
 
         Specification<Account> spec =
                 AccountSpecifications.withCustomerId(customerId)
                         .and(AccountSpecifications.withStatus(status))
                         .and(AccountSpecifications.withAccountNumber(accountNumber));
 
-        Page<Account> page = accountRepository.findAll(spec, pageable);
+        Page<Account> page = accountRepository.findAll(spec, effectivePageable);
         return PageResponse.from(
                 page,
                 account ->
@@ -147,12 +149,28 @@ public class AccountService {
         }
 
         account.updateLimits(request.transactionLimit(), request.dailyLimit());
-        Account updated = accountRepository.save(account);
+        Account updated = accountRepository.saveAndFlush(account);
         log.info(
                 "Updated limits on account [id={}, number={}]",
                 updated.getId(),
                 updated.getAccountNumber());
         return AccountResponse.from(updated, balanceTierPolicy.classify(updated.getBalance()));
+    }
+
+    private Pageable resolvePageable(Pageable pageable) {
+        Sort sort = pageable.getSort();
+        if (sort.isUnsorted()) {
+            sort = Sort.by(Sort.Order.desc("id"));
+        } else {
+            boolean hasIdSort = sort.stream().anyMatch(order -> "id".equals(order.getProperty()));
+            if (!hasIdSort) {
+                sort = sort.and(Sort.by(Sort.Order.desc("id")));
+            }
+        }
+        if (pageable.isUnpaged()) {
+            return Pageable.unpaged(sort);
+        }
+        return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
     }
 
     /** Closes an account if balance is zero. Throws ACCOUNT_HAS_BALANCE (409) if balance > 0. */

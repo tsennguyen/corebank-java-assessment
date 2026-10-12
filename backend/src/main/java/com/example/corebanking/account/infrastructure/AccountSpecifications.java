@@ -28,7 +28,7 @@ public final class AccountSpecifications {
             if (accountNumber == null || accountNumber.isBlank()) {
                 return cb.conjunction();
             }
-            return cb.like(root.get("accountNumber"), "%" + accountNumber.trim() + "%");
+            return cb.equal(root.get("accountNumber"), accountNumber.trim());
         };
     }
 }

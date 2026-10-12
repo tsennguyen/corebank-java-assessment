@@ -1,6 +1,8 @@
 package com.example.corebanking.customer.domain;
 
 import com.example.corebanking.common.domain.BaseEntity;
+import com.example.corebanking.common.domain.BusinessRuleException;
+import com.example.corebanking.common.domain.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -93,17 +95,14 @@ public class Customer extends BaseEntity {
             String location,
             LocalDate dateOfBirth) {
         if (isDeleted()) {
-            throw new IllegalStateException("Cannot update a deleted customer");
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION, "Cannot update a deleted customer");
         }
-        if (fullName != null && !fullName.isBlank()) {
-            this.fullName = fullName;
-        }
+        this.fullName = Objects.requireNonNull(fullName, "fullName must not be null");
         this.email = email;
         this.phone = phone;
         this.address = address;
-        if (location != null && !location.isBlank()) {
-            this.location = location;
-        }
+        this.location = Objects.requireNonNull(location, "location must not be null");
         this.dateOfBirth = dateOfBirth;
     }
 

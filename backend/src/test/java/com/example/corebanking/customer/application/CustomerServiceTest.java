@@ -31,6 +31,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -52,10 +54,7 @@ class CustomerServiceTest {
     void setUp() {
         customerService =
                 new CustomerService(
-                        customerRepository,
-                        customerCodeGenerator,
-                        clock,
-                        Optional.of(customerDeletionGuard));
+                        customerRepository, customerCodeGenerator, clock, customerDeletionGuard);
     }
 
     private void setId(Customer customer, Long id) {
@@ -102,8 +101,9 @@ class CustomerServiceTest {
     }
 
     @Test
-    @DisplayName("createCustomer throws DuplicateResourceException if national ID already exists")
-    void createCustomer_shouldThrowWhenNationalIdExists() {
+    @DisplayName("createCustomer throws DuplicateResourceException and masks national ID in logs")
+    @ExtendWith(OutputCaptureExtension.class)
+    void createCustomer_shouldThrowWhenNationalIdExists(CapturedOutput output) {
         CreateCustomerRequest request =
                 new CreateCustomerRequest(
                         "Nguyen Van An",
@@ -119,6 +119,9 @@ class CustomerServiceTest {
         assertThatThrownBy(() -> customerService.createCustomer(request))
                 .isInstanceOf(DuplicateResourceException.class)
                 .hasMessageContaining("Customer with national ID already exists");
+
+        assertThat(output.getOut()).contains("*********789");
+        assertThat(output.getOut()).doesNotContain("000123456789");
     }
 
     @Test
@@ -172,8 +175,10 @@ class CustomerServiceTest {
         setId(customer, 1L);
 
         PageRequest pageRequest = PageRequest.of(0, 20, Sort.by("fullName").ascending());
-        when(customerRepository.findAll(any(Specification.class), eq(pageRequest)))
-                .thenReturn(new PageImpl<>(List.of(customer), pageRequest, 1));
+        PageRequest effectivePageRequest =
+                PageRequest.of(0, 20, Sort.by(Sort.Order.asc("fullName"), Sort.Order.desc("id")));
+        when(customerRepository.findAll(any(Specification.class), eq(effectivePageRequest)))
+                .thenReturn(new PageImpl<>(List.of(customer), effectivePageRequest, 1));
 
         PageResponse<CustomerResponse> result =
                 customerService.searchCustomers("van", "Ha Noi", pageRequest);
@@ -228,7 +233,8 @@ class CustomerServiceTest {
         setId(customer, 1L);
 
         when(customerRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(customer));
-        when(customerRepository.save(any(Customer.class))).thenAnswer(i -> i.getArgument(0));
+        when(customerRepository.saveAndFlush(any(Customer.class)))
+                .thenAnswer(i -> i.getArgument(0));
 
         UpdateCustomerRequest updateReq =
                 new UpdateCustomerRequest(

@@ -100,7 +100,9 @@ public class Account extends BaseEntity {
      */
     public void updateLimits(BigDecimal transactionLimit, BigDecimal dailyLimit) {
         if (isClosed()) {
-            throw new IllegalStateException("Cannot update limits on a closed account");
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Cannot update limits on a closed account");
         }
         validateAndSetLimits(transactionLimit, dailyLimit);
     }
