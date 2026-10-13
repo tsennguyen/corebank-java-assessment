@@ -152,6 +152,35 @@ public class Account extends BaseEntity {
                 this.balance.add(depositAmount.getAmount()).setScale(2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Debits (withdraws/deducts) funds from the account. Enforces that the account is active,
+     * the amount is positive, and the balance is sufficient.
+     *
+     * @param debitAmount amount to debit
+     */
+    public void debit(Money debitAmount) {
+        Objects.requireNonNull(debitAmount, "debitAmount must not be null");
+        if (!debitAmount.isPositive()) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED, "Debit amount must be greater than zero");
+        }
+        if (!isActive()) {
+            throw new BusinessRuleException(
+                    ErrorCode.ACCOUNT_NOT_ACTIVE,
+                    "Cannot debit account in status: " + this.status);
+        }
+        if (this.balance.compareTo(debitAmount.getAmount()) < 0) {
+            throw new BusinessRuleException(
+                    ErrorCode.INSUFFICIENT_BALANCE,
+                    "Insufficient account balance. Current balance: "
+                            + this.balance
+                            + ", required: "
+                            + debitAmount.getAmount());
+        }
+        this.balance =
+                this.balance.subtract(debitAmount.getAmount()).setScale(2, RoundingMode.HALF_UP);
+    }
+
     private void validateAndSetLimits(BigDecimal transactionLimit, BigDecimal dailyLimit) {
         Objects.requireNonNull(transactionLimit, "transactionLimit must not be null");
         Objects.requireNonNull(dailyLimit, "dailyLimit must not be null");

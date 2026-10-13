@@ -8,15 +8,28 @@ import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.Money;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
 import com.example.corebanking.transaction.api.dto.DepositRequest;
+import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
 import com.example.corebanking.transaction.api.dto.TransactionSearchCriteria;
+import com.example.corebanking.transaction.api.dto.TransferRequest;
+import com.example.corebanking.transaction.api.dto.WithdrawalRequest;
+import com.example.corebanking.transaction.domain.FeePolicy;
+import com.example.corebanking.transaction.domain.LimitPolicy;
 import com.example.corebanking.transaction.domain.Transaction;
+import com.example.corebanking.transaction.domain.TransactionStatus;
+import com.example.corebanking.transaction.domain.TransactionType;
+import com.example.corebanking.transaction.domain.event.TransactionCompletedEvent;
 import com.example.corebanking.transaction.infrastructure.TransactionReferenceGenerator;
 import com.example.corebanking.transaction.infrastructure.TransactionRepository;
 import com.example.corebanking.transaction.infrastructure.TransactionSpecifications;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -35,18 +48,31 @@ public class TransactionService {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionService.class);
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("id", "createdAt", "amount");
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final TransactionReferenceGenerator referenceGenerator;
+    private final FeePolicy feePolicy;
+    private final LimitPolicy limitPolicy;
+    private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TransactionService(
             AccountRepository accountRepository,
             TransactionRepository transactionRepository,
-            TransactionReferenceGenerator referenceGenerator) {
+            TransactionReferenceGenerator referenceGenerator,
+            FeePolicy feePolicy,
+            LimitPolicy limitPolicy,
+            Clock clock,
+            ApplicationEventPublisher eventPublisher) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.referenceGenerator = referenceGenerator;
+        this.feePolicy = feePolicy;
+        this.limitPolicy = limitPolicy;
+        this.clock = clock;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -62,7 +88,7 @@ public class TransactionService {
                         .findByIdForUpdate(request.accountId())
                         .orElseThrow(
                                 () ->
-                                        new ResourceNotFoundException(
+                                         new ResourceNotFoundException(
                                                 "Account", request.accountId()));
 
         Money depositAmount = Money.of(request.amount());
@@ -79,6 +105,17 @@ public class TransactionService {
                         request.description());
 
         Transaction saved = transactionRepository.save(transaction);
+        eventPublisher.publishEvent(
+                new TransactionCompletedEvent(
+                        saved.getId(),
+                        saved.getReferenceNo(),
+                        saved.getType(),
+                        saved.getAmount(),
+                        saved.getFee(),
+                        saved.getSourceAccountId(),
+                        saved.getTargetAccountId(),
+                        clock.instant()));
+
         log.info(
                 "Deposit completed [txnId={}, ref={}, accountId={}, amount={}, balanceAfter={}]",
                 saved.getId(),
@@ -89,6 +126,225 @@ public class TransactionService {
 
         return TransactionResponse.from(saved);
     }
+
+    /**
+     * Executes an atomic cash withdrawal with limit validation and fee deduction under pessimistic
+     * write lock.
+     *
+     * @param request withdrawal details
+     * @return persisted transaction response
+     */
+    @Transactional
+    public TransactionResponse withdraw(WithdrawalRequest request) {
+        Account account =
+                accountRepository
+                        .findByIdForUpdate(request.accountId())
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "Account", request.accountId()));
+
+        Money amount = Money.of(request.amount());
+        BigDecimal dailySpent =
+                transactionRepository.sumOutgoingAmountSince(
+                        account.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+        limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
+
+        Money fee = feePolicy.calculateFee(TransactionType.WITHDRAWAL, amount);
+        Money totalDebit = amount.add(fee);
+        account.debit(totalDebit);
+
+        String referenceNo = referenceGenerator.generate();
+        Transaction transaction =
+                Transaction.createWithdrawal(
+                        referenceNo,
+                        account.getId(),
+                        amount.getAmount(),
+                        fee.getAmount(),
+                        account.getBalance(),
+                        request.location(),
+                        request.description());
+
+        Transaction saved = transactionRepository.save(transaction);
+        eventPublisher.publishEvent(
+                new TransactionCompletedEvent(
+                        saved.getId(),
+                        saved.getReferenceNo(),
+                        saved.getType(),
+                        saved.getAmount(),
+                        saved.getFee(),
+                        saved.getSourceAccountId(),
+                        saved.getTargetAccountId(),
+                        clock.instant()));
+
+        log.info(
+                "Withdrawal completed [txnId={}, ref={}, accountId={}, amount={}, fee={},"
+                        + " balanceAfter={}]",
+                saved.getId(),
+                saved.getReferenceNo(),
+                account.getId(),
+                saved.getAmount(),
+                saved.getFee(),
+                saved.getSourceBalanceAfter());
+
+        return TransactionResponse.from(saved);
+    }
+
+    /**
+     * Executes an atomic fund transfer between two distinct accounts under ascending ID pessimistic
+     * write locks to prevent deadlocks.
+     *
+     * @param request transfer details
+     * @return persisted transaction response
+     */
+    @Transactional
+    public TransactionResponse transfer(TransferRequest request) {
+        if (request.sourceAccountId().equals(request.targetAccountId())) {
+            throw new BusinessRuleException(
+                    ErrorCode.SAME_ACCOUNT_TRANSFER,
+                    "Source and target accounts cannot be identical");
+        }
+
+        // Lock accounts in strictly ascending ID order to prevent circular wait deadlock (NC-01)
+        Long firstId = Math.min(request.sourceAccountId(), request.targetAccountId());
+        Long secondId = Math.max(request.sourceAccountId(), request.targetAccountId());
+
+        Account firstAccount =
+                accountRepository
+                        .findByIdForUpdate(firstId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Account", firstId));
+        Account secondAccount =
+                accountRepository
+                        .findByIdForUpdate(secondId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Account", secondId));
+
+        Account source =
+                request.sourceAccountId().equals(firstId) ? firstAccount : secondAccount;
+        Account target =
+                request.targetAccountId().equals(firstId) ? firstAccount : secondAccount;
+
+        Money amount = Money.of(request.amount());
+        BigDecimal dailySpent =
+                transactionRepository.sumOutgoingAmountSince(
+                        source.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+        limitPolicy.validateLimits(source, amount, Money.of(dailySpent));
+
+        Money fee = feePolicy.calculateFee(TransactionType.TRANSFER, amount);
+        Money totalDebit = amount.add(fee);
+
+        source.debit(totalDebit);
+        target.credit(amount);
+
+        String referenceNo = referenceGenerator.generate();
+        Transaction transaction =
+                Transaction.createTransfer(
+                        referenceNo,
+                        source.getId(),
+                        target.getId(),
+                        amount.getAmount(),
+                        fee.getAmount(),
+                        source.getBalance(),
+                        target.getBalance(),
+                        request.location(),
+                        request.description());
+
+        Transaction saved = transactionRepository.save(transaction);
+        eventPublisher.publishEvent(
+                new TransactionCompletedEvent(
+                        saved.getId(),
+                        saved.getReferenceNo(),
+                        saved.getType(),
+                        saved.getAmount(),
+                        saved.getFee(),
+                        saved.getSourceAccountId(),
+                        saved.getTargetAccountId(),
+                        clock.instant()));
+
+        log.info(
+                "Transfer completed [txnId={}, ref={}, from={}, to={}, amount={}, fee={}]",
+                saved.getId(),
+                saved.getReferenceNo(),
+                source.getId(),
+                target.getId(),
+                saved.getAmount(),
+                saved.getFee());
+
+        return TransactionResponse.from(saved);
+    }
+
+    /**
+     * Executes an outbound payment with limit validation and fee deduction.
+     *
+     * @param request payment details
+     * @return persisted transaction response
+     */
+    @Transactional
+    public TransactionResponse payment(PaymentRequest request) {
+        Account account =
+                accountRepository
+                        .findByIdForUpdate(request.sourceAccountId())
+                        .orElseThrow(
+                                () ->
+                                        new ResourceNotFoundException(
+                                                "Account", request.sourceAccountId()));
+
+        Money amount = Money.of(request.amount());
+        BigDecimal dailySpent =
+                transactionRepository.sumOutgoingAmountSince(
+                        account.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+        limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
+
+        Money fee = feePolicy.calculateFee(TransactionType.PAYMENT, amount);
+        Money totalDebit = amount.add(fee);
+        account.debit(totalDebit);
+
+        String referenceNo = referenceGenerator.generate();
+        String description = request.description();
+        if (request.recipientInfo() != null && !request.recipientInfo().isBlank()) {
+            description =
+                    (description != null ? description + " | " : "")
+                            + request.recipientInfo().trim();
+        }
+
+        Transaction transaction =
+                Transaction.createPayment(
+                        referenceNo,
+                        account.getId(),
+                        amount.getAmount(),
+                        fee.getAmount(),
+                        account.getBalance(),
+                        request.location(),
+                        description);
+
+        Transaction saved = transactionRepository.save(transaction);
+        eventPublisher.publishEvent(
+                new TransactionCompletedEvent(
+                        saved.getId(),
+                        saved.getReferenceNo(),
+                        saved.getType(),
+                        saved.getAmount(),
+                        saved.getFee(),
+                        saved.getSourceAccountId(),
+                        saved.getTargetAccountId(),
+                        clock.instant()));
+
+        log.info(
+                "Payment completed [txnId={}, ref={}, accountId={}, amount={}, fee={},"
+                        + " balanceAfter={}]",
+                saved.getId(),
+                saved.getReferenceNo(),
+                account.getId(),
+                saved.getAmount(),
+                saved.getFee(),
+                saved.getSourceBalanceAfter());
+
+        return TransactionResponse.from(saved);
+    }
+
+    private Instant getStartOfDay() {
+        return LocalDate.now(clock).atStartOfDay(BUSINESS_ZONE).toInstant();
+    }
+
 
     /**
      * Retrieves transaction details by ID.

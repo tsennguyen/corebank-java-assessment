@@ -2,8 +2,11 @@ package com.example.corebanking.transaction.api;
 
 import com.example.corebanking.common.api.PageResponse;
 import com.example.corebanking.transaction.api.dto.DepositRequest;
+import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
 import com.example.corebanking.transaction.api.dto.TransactionSearchCriteria;
+import com.example.corebanking.transaction.api.dto.TransferRequest;
+import com.example.corebanking.transaction.api.dto.WithdrawalRequest;
 import com.example.corebanking.transaction.application.TransactionService;
 import com.example.corebanking.transaction.domain.TransactionType;
 import io.swagger.v3.oas.annotations.Operation;
@@ -81,6 +84,131 @@ public class TransactionController {
                         .toUri();
         return ResponseEntity.created(location).body(response);
     }
+
+    @PostMapping("/withdrawals")
+    @Operation(
+            summary = "Rút tiền từ tài khoản",
+            description =
+                    "Ghi nợ (debit) tiền mặt từ tài khoản kèm tính phí và kiểm tra hạn mức giao dịch"
+                            + " / hạn mức ngày, cập nhật số dư nguyên tử.")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "201",
+                description = "Rút tiền thành công",
+                headers =
+                        @Header(
+                                name = "Location",
+                                description = "URI tài nguyên giao dịch vừa tạo",
+                                schema = @Schema(type = "string")),
+                content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Dữ liệu rút tiền không hợp lệ (số tiền âm, định dạng sai)",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy tài khoản nguồn",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "422",
+                description =
+                        "Không đủ số dư, vượt hạn mức giao dịch, vượt hạn mức ngày hoặc tài khoản"
+                                + " không hoạt động",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<TransactionResponse> withdraw(
+            @Valid @RequestBody WithdrawalRequest request) {
+        TransactionResponse response = transactionService.withdraw(request);
+        URI location =
+                ServletUriComponentsBuilder.fromCurrentContextPath()
+                        .path("/api/v1/transactions/{id}")
+                        .buildAndExpand(response.id())
+                        .toUri();
+        return ResponseEntity.created(location).body(response);
+    }
+
+    @PostMapping("/transfers")
+    @Operation(
+            summary = "Chuyển khoản nội bộ giữa hai tài khoản",
+            description =
+                    "Chuyển tiền giữa hai tài khoản với cơ chế khóa bi quan sắp xếp ID tăng dần chống"
+                            + " deadlock, kiểm tra hạn mức và tự động tính phí.")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "201",
+                description = "Chuyển tiền thành công",
+                headers =
+                        @Header(
+                                name = "Location",
+                                description = "URI tài nguyên giao dịch vừa tạo",
+                                schema = @Schema(type = "string")),
+                content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Dữ liệu không hợp lệ hoặc tài khoản nguồn và đích trùng nhau",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy tài khoản nguồn hoặc đích",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "422",
+                description =
+                        "Không đủ số dư, vượt hạn mức giao dịch, vượt hạn mức ngày hoặc tài khoản"
+                                + " không hoạt động",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<TransactionResponse> transfer(
+            @Valid @RequestBody TransferRequest request) {
+        TransactionResponse response = transactionService.transfer(request);
+        URI location =
+                ServletUriComponentsBuilder.fromCurrentContextPath()
+                        .path("/api/v1/transactions/{id}")
+                        .buildAndExpand(response.id())
+                        .toUri();
+        return ResponseEntity.created(location).body(response);
+    }
+
+    @PostMapping("/payments")
+    @Operation(
+            summary = "Thanh toán dịch vụ / hóa đơn",
+            description =
+                    "Ghi nợ tài khoản để thanh toán dịch vụ hoặc hóa đơn kèm kiểm tra hạn mức và tính"
+                            + " phí.")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "201",
+                description = "Thanh toán thành công",
+                headers =
+                        @Header(
+                                name = "Location",
+                                description = "URI tài nguyên giao dịch vừa tạo",
+                                schema = @Schema(type = "string")),
+                content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Dữ liệu thanh toán không hợp lệ",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy tài khoản trích nợ",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "422",
+                description = "Không đủ số dư, vượt hạn mức hoặc tài khoản không hoạt động",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<TransactionResponse> payment(
+            @Valid @RequestBody PaymentRequest request) {
+        TransactionResponse response = transactionService.payment(request);
+        URI location =
+                ServletUriComponentsBuilder.fromCurrentContextPath()
+                        .path("/api/v1/transactions/{id}")
+                        .buildAndExpand(response.id())
+                        .toUri();
+        return ResponseEntity.created(location).body(response);
+    }
+
 
     @GetMapping("/{id}")
     @Operation(

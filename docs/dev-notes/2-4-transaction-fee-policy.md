@@ -1,0 +1,26 @@
+# Dev Note 2.4: Transaction Fee Policy
+
+- **Tóm tắt:** Xây dựng cơ chế tính phí giao dịch đa bậc cấu hình động theo Strategy Pattern, tối ưu tra cứu $O(\log N)$ với `TreeMap.floorEntry`, xử lý làm tròn chuẩn xác tuyệt đối (`RoundingMode.HALF_UP`), và cung cấp REST API xem trước phí (`GET /api/v1/fees/preview`) phi trạng thái bảo đảm an toàn dữ liệu. Mã yêu cầu: `L1-08`, `L1-03`. PR: #14 (nhánh `feat/2-4-transaction-fee-policy`).
+- **Đã làm gì:**
+  - Định nghĩa `@ConfigurationProperties(prefix = "app.fees")` trong lớp `FeeProperties` gắn với cấu hình bậc phí trong `application.yml` cho `WITHDRAWAL`, `TRANSFER`, `DEPOSIT`, `PAYMENT` theo PRD FR-6.
+  - Định nghĩa Strategy interface `FeePolicy` và domain value object `FeeTier`.
+  - Triển khai `TieredFeePolicy` sử dụng `TreeMap<BigDecimal, FeeTier>` với `floorEntry` cho từng loại giao dịch, bảo đảm an toàn đa luồng bằng `Collections.unmodifiableMap`.
+  - Triển khai thuật toán tính phí: kiểm tra số tiền hợp lệ (> 0), tra cứu bậc phí tương ứng theo mốc dưới, tính phí phần trăm nếu có (`ratePercent`), cộng phí cố định (`flatFee`), và áp trần tối đa (`maxFee`).
+  - Xây dựng DTO `FeePreviewRequest` (validation Jakarta: `@NotNull`, `@DecimalMin`, `@Digits`) và `FeePreviewResponse`.
+  - Triển khai `FeeController` (`GET /api/v1/fees/preview`) phi trạng thái (idempotent read-only) có đầy đủ chú thích OpenAPI / Swagger.
+  - Bổ sung exception handler `MethodArgumentTypeMismatchException` vào `GlobalExceptionHandler` trả về RFC 9457 ProblemDetail chuẩn `VALIDATION_FAILED` (HTTP 400).
+  - Viết 25 tests mới (Unit test `TieredFeePolicyTest` bao phủ toàn bộ điểm biên, edge case; WebMvc test `FeeControllerTest` kiểm tra các mã HTTP 200, 400). Tổng 174 tests.
+- **Vì sao làm vậy:** Biểu phí giao dịch thay đổi theo chính sách kinh doanh theo từng thời kỳ; việc cấu hình theo bậc kết hợp mẫu Strategy Pattern giúp dễ dàng thay đổi mức phí hoặc bổ sung cách tính mới (như miễn phí cho khách VIP ở Level 3) mà không sửa đổi logic gọi tính phí.
+- **Phương án khác đã cân nhắc:**
+  - Hardcode logic `if-else` trong Service: Dễ gây lỗi off-by-one, khó mở rộng khi chính sách thay đổi, vi phạm nguyên tắc Open/Closed (OCP).
+  - Dùng `List<FeeTier>` lặp tuần tự $O(N)$: Kém hiệu quả khi có nhiều bậc phí. `TreeMap.floorEntry` đạt độ phức tạp tối ưu $O(\log N)$ và cú pháp ngắn gọn, trực quan.
+  - Lưu bảng `fee_tier` trong CSDL: Với quy mô Level 1 và tính chất phí ít biến động theo từng giây, lưu cấu hình trong YAML giúp tốc độ tính toán tính bằng nano-giây, giảm tải truy vấn DB và không cần cache phức tạp.
+- **Bẫy cần nhớ:**
+  - Mốc biên: Đúng mốc biên (500k, 10M) phải thuộc về bậc trên (`minAmount <= amount`). `TreeMap.floorEntry` giải quyết trọn vẹn yêu cầu này.
+  - Sai số dấu phẩy động: Tuyệt đối không dùng `double` hay `float`. Sử dụng `BigDecimal` với scale 2 và làm tròn `RoundingMode.HALF_UP`.
+  - Chặn trần (`maxFee`): Đối với giao dịch lớn (ví dụ chuyển hàng trăm triệu/tỷ đồng), phí phần trăm phải bị chặn ở mức trần tối đa quy định.
+  - Số tiền âm hoặc bằng 0: Phương thức `calculateFee` ném `IllegalArgumentException` fail-fast, DTO validation chặn ngay từ cửa ngõ API bằng `@DecimalMin("0.01")`.
+- **Cách chạy/test:**
+  - Unit tests: `./mvnw test -Dtest=TieredFeePolicyTest`
+  - WebMvc tests: `./mvnw test -Dtest=FeeControllerTest`
+  - Toàn bộ suite: `./mvnw verify`

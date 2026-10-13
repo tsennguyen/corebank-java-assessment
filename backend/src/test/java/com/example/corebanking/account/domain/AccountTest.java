@@ -233,4 +233,100 @@ class AccountTest {
                                 assertThat(((BusinessRuleException) ex).getErrorCode())
                                         .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE));
     }
+
+    @Test
+    @DisplayName("debit() subtracts amount when balance is sufficient")
+    void debit_whenSufficientBalance_shouldDeductAmount() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        account.credit(com.example.corebanking.common.domain.Money.of("500000.00"));
+
+        account.debit(com.example.corebanking.common.domain.Money.of("200000.00"));
+
+        assertThat(account.getBalance()).isEqualByComparingTo("300000.00");
+    }
+
+    @Test
+    @DisplayName("debit() throws INSUFFICIENT_BALANCE when balance is lower than debit amount")
+    void debit_whenInsufficientBalance_shouldThrowInsufficientBalance() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        account.credit(com.example.corebanking.common.domain.Money.of("100000.00"));
+
+        assertThatThrownBy(
+                        () ->
+                                account.debit(
+                                        com.example.corebanking.common.domain.Money.of(
+                                                "100000.01")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE));
+    }
+
+    @Test
+    @DisplayName("debit() throws VALIDATION_FAILED when debit amount is zero or negative")
+    void debit_whenAmountZeroOrNegative_shouldThrowValidationFailed() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+
+        assertThatThrownBy(() -> account.debit(com.example.corebanking.common.domain.Money.zero()))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+        assertThatThrownBy(
+                        () ->
+                                account.debit(
+                                        com.example.corebanking.common.domain.Money.of(
+                                                "-1000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.VALIDATION_FAILED));
+    }
+
+    @Test
+    @DisplayName("debit() throws ACCOUNT_NOT_ACTIVE when account is closed")
+    void debit_whenAccountClosed_shouldThrowAccountNotActive() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        account.close(Instant.parse("2026-10-09T08:00:00Z"));
+
+        assertThatThrownBy(
+                        () ->
+                                account.debit(
+                                        com.example.corebanking.common.domain.Money.of(
+                                                "10000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE));
+    }
 }
+
