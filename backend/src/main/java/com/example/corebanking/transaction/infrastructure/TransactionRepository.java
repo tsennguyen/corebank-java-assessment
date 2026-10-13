@@ -1,6 +1,9 @@
 package com.example.corebanking.transaction.infrastructure;
 
 import com.example.corebanking.transaction.domain.Transaction;
+import com.example.corebanking.transaction.domain.TransactionStatus;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -21,4 +24,14 @@ public interface TransactionRepository
             "SELECT t FROM Transaction t WHERE t.sourceAccountId = :accountId OR t.targetAccountId"
                     + " = :accountId")
     Page<Transaction> findByAccountId(@Param("accountId") Long accountId, Pageable pageable);
+
+    @Query(
+            "SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t "
+                    + "WHERE t.sourceAccountId = :accountId "
+                    + "AND t.status = :status "
+                    + "AND t.createdAt >= :since")
+    BigDecimal sumOutgoingAmountSince(
+            @Param("accountId") Long accountId,
+            @Param("status") TransactionStatus status,
+            @Param("since") Instant since);
 }
