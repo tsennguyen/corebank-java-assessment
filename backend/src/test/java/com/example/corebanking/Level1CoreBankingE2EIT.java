@@ -82,7 +82,7 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                                 """))
                         .andExpect(status().isCreated())
                         .andExpect(jsonPath("$.customerCode").isString())
-                        .andExpect(jsonPath("$.nationalId").value("000*****8901"))
+                        .andExpect(jsonPath("$.nationalId").value("*********901"))
                         .andExpect(jsonPath("$.version").value(0))
                         .andReturn();
         JsonNode customerA =
@@ -106,7 +106,7 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                                 }
                                                 """))
                         .andExpect(status().isCreated())
-                        .andExpect(jsonPath("$.nationalId").value("000*****8902"))
+                        .andExpect(jsonPath("$.nationalId").value("*********902"))
                         .andReturn();
         JsonNode customerB =
                 objectMapper.readTree(createCustBResult.getResponse().getContentAsString());
@@ -444,6 +444,52 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                         LocationStatisticResponse::location,
                                         LocationStatisticResponse::customerCount));
         assertThat(finalLocations.get("Pleiku")).isEqualTo(baselinePleiku + 1L);
+
+        // =========================================================================
+        // 7. Cash Withdrawal & Bill Payment on Account A (L1-03, L1-06, L1-07)
+        // =========================================================================
+        mockMvc.perform(
+                        post("/api/v1/transactions/withdrawals")
+                                .header("Idempotency-Key", "e2e-wdr-" + UUID.randomUUID())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        String.format(
+                                                """
+                                                {
+                                                  "accountId": %d,
+                                                  "amount": 500000.00,
+                                                  "location": "Pleiku",
+                                                  "description": "Rút tiền mặt E2E"
+                                                }
+                                                """,
+                                                accountAId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("WITHDRAWAL"))
+                .andExpect(jsonPath("$.amount").value(500000.00))
+                .andExpect(jsonPath("$.fee").value(0.00))
+                .andExpect(jsonPath("$.sourceBalanceAfter").value(149500000.00));
+
+        mockMvc.perform(
+                        post("/api/v1/transactions/payments")
+                                .header("Idempotency-Key", "e2e-pay-" + UUID.randomUUID())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        String.format(
+                                                """
+                                                {
+                                                  "sourceAccountId": %d,
+                                                  "amount": 500000.00,
+                                                  "location": "Online Gateway",
+                                                  "description": "Thanh toán hóa đơn điện E2E",
+                                                  "recipientInfo": "EVN Power Utility"
+                                                }
+                                                """,
+                                                accountAId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("PAYMENT"))
+                .andExpect(jsonPath("$.amount").value(500000.00))
+                .andExpect(jsonPath("$.fee").value(0.00))
+                .andExpect(jsonPath("$.sourceBalanceAfter").value(149000000.00));
     }
 
     private static void assertValidLuhnAccountNumber(String accountNumber) {
