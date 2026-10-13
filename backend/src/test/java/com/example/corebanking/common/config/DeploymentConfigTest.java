@@ -1,0 +1,95 @@
+package com.example.corebanking.common.config;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
+
+/**
+ * Verifies containerization and cloud deployment configuration invariants (Story 2.10: NC-06,
+ * NC-10, NFR-10, FR-24).
+ */
+class DeploymentConfigTest {
+
+    @Test
+    @DisplayName(
+            "backend/Dockerfile uses multi-stage Temurin 21 JRE, layered JAR extraction, non-root"
+                    + " user, fontconfig, and memory-tuned JVM flags (NC-06)")
+    void dockerfile_shouldFollowMultiStageLayeredHardenedConventions() throws Exception {
+        Path dockerfilePath = resolveBackendFile("Dockerfile");
+        String dockerfile = Files.readString(dockerfilePath, StandardCharsets.UTF_8);
+
+        assertThat(dockerfile)
+                .contains("FROM eclipse-temurin:21-jdk-jammy AS build")
+                .contains("FROM eclipse-temurin:21-jre-jammy AS runtime")
+                .contains("extract --layers --launcher")
+                .contains("fontconfig")
+                .contains("fonts-dejavu-core")
+                .contains("useradd --system")
+                .contains("USER appuser:appgroup")
+                .contains("-XX:MaxRAMPercentage=75.0")
+                .contains("-XX:+UseSerialGC")
+                .contains("-XX:+ExitOnOutOfMemoryError")
+                .contains("-Djava.awt.headless=true")
+                .contains("HEALTHCHECK")
+                .contains("/actuator/health")
+                .contains("org.springframework.boot.loader.launch.JarLauncher");
+    }
+
+    @Test
+    @DisplayName(
+            "docker-compose.yml and render.yaml define PostgreSQL 17, health checks, and secretless"
+                    + " cloud staging configuration (NC-06, NC-10)")
+    void composeAndRenderBlueprint_shouldConfigureHealthChecksAndNoHardcodedProdSecrets()
+            throws Exception {
+        Path composePath = resolveRepoRootFile("docker-compose.yml");
+        String compose = Files.readString(composePath, StandardCharsets.UTF_8);
+
+        assertThat(compose)
+                .contains("postgres:17-alpine")
+                .contains("pg_isready")
+                .contains("condition: service_healthy")
+                .contains("http://localhost:8080/actuator/health");
+
+        Path renderPath = resolveRepoRootFile("render.yaml");
+        String render = Files.readString(renderPath, StandardCharsets.UTF_8);
+
+        assertThat(render)
+                .contains("runtime: docker")
+                .contains("region: singapore")
+                .contains("branch: prod")
+                .contains("rootDir: backend")
+                .contains("healthCheckPath: /actuator/health")
+                .contains("sync: false");
+
+        ClassPathResource prodConfig = new ClassPathResource("application-prod.yml");
+        String prodYaml = prodConfig.getContentAsString(StandardCharsets.UTF_8);
+
+        assertThat(prodYaml)
+                .contains("${DATABASE_URL:${SPRING_DATASOURCE_URL}}")
+                .contains("maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}")
+                .contains("connection-timeout: 5000")
+                .contains("lock_timeout=3000")
+                .contains("classpath:db/migration,classpath:db/seed");
+    }
+
+    private static Path resolveBackendFile(String relativePath) {
+        Path cwd = Path.of("").toAbsolutePath();
+        if (Files.exists(cwd.resolve(relativePath))) {
+            return cwd.resolve(relativePath);
+        }
+        return cwd.resolve("backend").resolve(relativePath);
+    }
+
+    private static Path resolveRepoRootFile(String relativePath) {
+        Path cwd = Path.of("").toAbsolutePath();
+        if (Files.exists(cwd.resolve(relativePath))) {
+            return cwd.resolve(relativePath);
+        }
+        return cwd.getParent().resolve(relativePath);
+    }
+}

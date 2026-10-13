@@ -1,0 +1,94 @@
+name: Continuous Delivery & Container Verification
+
+on:
+  push:
+    branches:
+      - main
+      - prod
+  pull_request:
+    paths:
+      - 'backend/Dockerfile'
+      - 'backend/.dockerignore'
+      - 'backend/src/main/resources/application*.yml'
+      - 'backend/src/main/resources/db/**'
+      - 'docker-compose.yml'
+      - 'render.yaml'
+      - '.github/workflows/cd.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  container-smoke-test:
+    name: Docker Compose Stack & Health Smoke Test (PostgreSQL 17 + App)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and start Docker Compose stack
+        run: docker compose up -d --build
+
+      - name: Wait for /actuator/health to report UP
+        run: |
+          for i in $(seq 1 40); do
+            STATUS=$(curl -s http://localhost:8080/actuator/health | grep -o '"status":"UP"' || true)
+            if [ "$STATUS" = '"status":"UP"' ]; then
+              echo "Application is UP after $((i * 3))s"
+              curl -fsS http://localhost:8080/actuator/health
+              echo ""
+              break
+            fi
+            if [ "$i" -eq 40 ]; then
+              echo "Timed out waiting for application health check"
+              docker compose logs
+              exit 1
+            fi
+            sleep 3
+          done
+
+      - name: Verify non-root container user and JVM flags
+        run: |
+          WHOAMI=$(docker compose exec -T app whoami)
+          echo "Container user: $WHOAMI"
+          test "$WHOAMI" = "appuser"
+
+      - name: Verify Swagger OpenAPI docs and seeded Level 1 statistics
+        run: |
+          curl -fsS http://localhost:8080/v3/api-docs | grep -q '"openapi"'
+          curl -fsS http://localhost:8080/swagger-ui/index.html | grep -q 'Swagger UI'
+          TIERS=$(curl -fsS http://localhost:8080/api/v1/statistics/balance-tiers)
+          echo "Balance tiers response: $TIERS"
+          echo "$TIERS" | grep -q '"tier":"LOW"'
+          echo "$TIERS" | grep -q '"tier":"MEDIUM"'
+          echo "$TIERS" | grep -q '"tier":"HIGH"'
+          LOCATIONS=$(curl -fsS http://localhost:8080/api/v1/statistics/customers-by-location)
+          echo "Locations response: $LOCATIONS"
+          echo "$LOCATIONS" | grep -q '"customerCount"'
+
+      - name: Tear down Docker Compose stack
+        if: always()
+        run: docker compose down -v
+
+  staging-smoke-test:
+    name: Cloud Staging Health Verification
+    needs: container-smoke-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/prod' && vars.STAGING_BACKEND_URL != ''
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify Staging /actuator/health on Render
+        run: |
+          echo "Checking staging URL: ${{ vars.STAGING_BACKEND_URL }}/actuator/health"
+          for i in $(seq 1 30); do
+            if curl -fsS "${{ vars.STAGING_BACKEND_URL }}/actuator/health" | grep -q '"status":"UP"'; then
+              echo "Staging health check passed!"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Staging health check timed out"
+          exit 1
