@@ -6,6 +6,7 @@ import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
 import com.example.corebanking.transaction.api.dto.TransactionSearchCriteria;
 import com.example.corebanking.transaction.api.dto.TransferRequest;
+import com.example.corebanking.transaction.api.dto.UpdateTransactionRequest;
 import com.example.corebanking.transaction.api.dto.WithdrawalRequest;
 import com.example.corebanking.transaction.application.TransactionService;
 import com.example.corebanking.transaction.domain.TransactionType;
@@ -25,7 +26,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -226,6 +229,70 @@ public class TransactionController {
             @Parameter(description = "ID nội bộ của giao dịch", example = "1") @PathVariable
                     Long id) {
         return ResponseEntity.ok(transactionService.getTransactionById(id));
+    }
+
+    @PatchMapping("/{id}")
+    @Operation(
+            summary = "Cập nhật thông tin giao dịch",
+            description =
+                    "Cập nhật các trường thông tin mô tả và địa điểm của giao dịch. Các trường tài"
+                            + " chính (số tiền, phí, tài khoản) là bất biến.")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "200",
+                description = "Cập nhật giao dịch thành công",
+                content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+        @ApiResponse(
+                responseCode = "400",
+                description =
+                        "Dữ liệu không hợp lệ hoặc cố tình sửa đổi trường bất biến"
+                                + " (IMMUTABLE_FIELD)",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy giao dịch",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "409",
+                description = "Không thể sửa giao dịch đã bị đảo",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<TransactionResponse> updateTransaction(
+            @Parameter(description = "ID nội bộ của giao dịch", example = "1") @PathVariable
+                    Long id,
+            @Valid @RequestBody UpdateTransactionRequest request) {
+        return ResponseEntity.ok(transactionService.updateTransactionMetadata(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(
+            summary = "Đảo giao dịch (Reversal)",
+            description =
+                    "Thực hiện đảo giao dịch tài chính để hoàn tiền/phí và cập nhật số dư, bảo đảm"
+                            + " toàn vẹn vết kiểm toán. Giao dịch gốc chuyển sang REVERSED.")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "200",
+                description = "Đảo giao dịch thành công, trả về bản ghi REVERSAL",
+                content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy giao dịch",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "409",
+                description = "Giao dịch đã bị đảo trước đó (ALREADY_REVERSED) hoặc không thể đảo",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "422",
+                description =
+                        "Tài khoản nhận không đủ số dư để hoàn lại tiền (INSUFFICIENT_BALANCE)",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<TransactionResponse> reverseTransaction(
+            @Parameter(description = "ID nội bộ của giao dịch cần đảo", example = "1") @PathVariable
+                    Long id) {
+        return ResponseEntity.ok(transactionService.reverseTransaction(id));
     }
 
     @GetMapping

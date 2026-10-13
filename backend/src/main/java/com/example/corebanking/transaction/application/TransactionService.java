@@ -12,6 +12,7 @@ import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
 import com.example.corebanking.transaction.api.dto.TransactionSearchCriteria;
 import com.example.corebanking.transaction.api.dto.TransferRequest;
+import com.example.corebanking.transaction.api.dto.UpdateTransactionRequest;
 import com.example.corebanking.transaction.api.dto.WithdrawalRequest;
 import com.example.corebanking.transaction.domain.FeePolicy;
 import com.example.corebanking.transaction.domain.LimitPolicy;
@@ -338,6 +339,184 @@ public class TransactionService {
                 saved.getSourceBalanceAfter());
 
         return TransactionResponse.from(saved);
+    }
+
+    /**
+     * Updates mutable metadata (description and location) for an existing completed transaction.
+     *
+     * @param id target transaction ID
+     * @param request update payload
+     * @return updated transaction response
+     */
+    @Transactional
+    public TransactionResponse updateTransactionMetadata(
+            Long id, UpdateTransactionRequest request) {
+        request.validateImmutability();
+
+        Transaction transaction =
+                transactionRepository
+                        .findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Transaction", id));
+
+        transaction.updateMetadata(request.description(), request.location());
+        Transaction saved = transactionRepository.saveAndFlush(transaction);
+
+        log.info(
+                "Transaction metadata updated [txnId={}, ref={}]",
+                saved.getId(),
+                saved.getReferenceNo());
+        return TransactionResponse.from(saved);
+    }
+
+    /**
+     * Reverses an existing financial transaction, updating account balance(s) atomically under
+     * pessimistic write lock(s) and marking the original transaction as REVERSED.
+     *
+     * @param id transaction ID to reverse
+     * @return created reversal transaction response
+     */
+    @Transactional
+    public TransactionResponse reverseTransaction(Long id) {
+        Transaction original =
+                transactionRepository
+                        .findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Transaction", id));
+
+        if (original.getStatus() == TransactionStatus.REVERSED
+                || transactionRepository.existsByReversalOfId(id)) {
+            throw new BusinessRuleException(
+                    ErrorCode.ALREADY_REVERSED, "Transaction " + id + " has already been reversed");
+        }
+
+        if (original.getType() == TransactionType.REVERSAL) {
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION, "Cannot reverse a reversal transaction");
+        }
+
+        Transaction reversal;
+        String referenceNo = referenceGenerator.generate();
+
+        switch (original.getType()) {
+            case DEPOSIT -> {
+                Account target =
+                        accountRepository
+                                .findByIdForUpdate(original.getTargetAccountId())
+                                .orElseThrow(
+                                        () ->
+                                                new ResourceNotFoundException(
+                                                        "Account", original.getTargetAccountId()));
+
+                target.debit(Money.of(original.getAmount()));
+                original.markReversed();
+
+                reversal =
+                        Transaction.createDepositReversal(
+                                referenceNo, original, target.getBalance(), null, null);
+            }
+            case WITHDRAWAL -> {
+                Account source =
+                        accountRepository
+                                .findByIdForUpdate(original.getSourceAccountId())
+                                .orElseThrow(
+                                        () ->
+                                                new ResourceNotFoundException(
+                                                        "Account", original.getSourceAccountId()));
+
+                Money refundTotal =
+                        Money.of(original.getAmount()).plus(Money.of(original.getFee()));
+                source.credit(refundTotal);
+                original.markReversed();
+
+                reversal =
+                        Transaction.createWithdrawalReversal(
+                                referenceNo, original, source.getBalance(), null, null);
+            }
+            case PAYMENT -> {
+                Account source =
+                        accountRepository
+                                .findByIdForUpdate(original.getSourceAccountId())
+                                .orElseThrow(
+                                        () ->
+                                                new ResourceNotFoundException(
+                                                        "Account", original.getSourceAccountId()));
+
+                Money refundTotal =
+                        Money.of(original.getAmount()).plus(Money.of(original.getFee()));
+                source.credit(refundTotal);
+                original.markReversed();
+
+                reversal =
+                        Transaction.createPaymentReversal(
+                                referenceNo, original, source.getBalance(), null, null);
+            }
+            case TRANSFER -> {
+                Long firstId =
+                        Math.min(original.getSourceAccountId(), original.getTargetAccountId());
+                Long secondId =
+                        Math.max(original.getSourceAccountId(), original.getTargetAccountId());
+
+                Account firstAccount =
+                        accountRepository
+                                .findByIdForUpdate(firstId)
+                                .orElseThrow(
+                                        () -> new ResourceNotFoundException("Account", firstId));
+                Account secondAccount =
+                        accountRepository
+                                .findByIdForUpdate(secondId)
+                                .orElseThrow(
+                                        () -> new ResourceNotFoundException("Account", secondId));
+
+                Account sourceA =
+                        original.getSourceAccountId().equals(firstId)
+                                ? firstAccount
+                                : secondAccount;
+                Account targetB =
+                        original.getTargetAccountId().equals(firstId)
+                                ? firstAccount
+                                : secondAccount;
+
+                targetB.debit(Money.of(original.getAmount()));
+                Money refundA = Money.of(original.getAmount()).plus(Money.of(original.getFee()));
+                sourceA.credit(refundA);
+
+                original.markReversed();
+
+                reversal =
+                        Transaction.createTransferReversal(
+                                referenceNo,
+                                original,
+                                targetB.getBalance(),
+                                sourceA.getBalance(),
+                                null,
+                                null);
+            }
+            default ->
+                    throw new BusinessRuleException(
+                            ErrorCode.INVALID_STATUS_TRANSITION,
+                            "Unsupported transaction type for reversal: " + original.getType());
+        }
+
+        transactionRepository.save(original);
+        Transaction savedReversal = transactionRepository.save(reversal);
+
+        eventPublisher.publishEvent(
+                new TransactionCompletedEvent(
+                        savedReversal.getId(),
+                        savedReversal.getReferenceNo(),
+                        savedReversal.getType(),
+                        savedReversal.getAmount(),
+                        savedReversal.getFee(),
+                        savedReversal.getSourceAccountId(),
+                        savedReversal.getTargetAccountId(),
+                        clock.instant()));
+
+        log.info(
+                "Transaction reversed successfully [originalId={}, reversalId={}, ref={}]",
+                original.getId(),
+                savedReversal.getId(),
+                savedReversal.getReferenceNo());
+
+        return TransactionResponse.from(savedReversal);
     }
 
     private Instant getStartOfDay() {

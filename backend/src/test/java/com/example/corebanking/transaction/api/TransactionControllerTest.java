@@ -4,7 +4,9 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -22,6 +24,7 @@ import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
 import com.example.corebanking.transaction.api.dto.TransactionSearchCriteria;
 import com.example.corebanking.transaction.api.dto.TransferRequest;
+import com.example.corebanking.transaction.api.dto.UpdateTransactionRequest;
 import com.example.corebanking.transaction.api.dto.WithdrawalRequest;
 import com.example.corebanking.transaction.application.TransactionService;
 import com.example.corebanking.transaction.domain.TransactionStatus;
@@ -544,6 +547,177 @@ class TransactionControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content", hasSize(1)))
                     .andExpect(jsonPath("$.totalElements").value(1));
+        }
+    }
+
+    @Nested
+    @DisplayName("PATCH /api/v1/transactions/{id} Tests")
+    class PatchTransactionTests {
+
+        @Test
+        @DisplayName("PATCH /api/v1/transactions/{id} returns 200 with updated metadata")
+        void updateTransaction_whenValid_shouldReturn200() throws Exception {
+            TransactionResponse response =
+                    new TransactionResponse(
+                            1L,
+                            "TXN-UPD001",
+                            TransactionType.DEPOSIT,
+                            TransactionStatus.COMPLETED,
+                            new BigDecimal("100000.00"),
+                            BigDecimal.ZERO,
+                            null,
+                            10L,
+                            null,
+                            new BigDecimal("100000.00"),
+                            new BigDecimal("100000.00"),
+                            "New Location",
+                            "New Description",
+                            Instant.parse("2026-10-12T14:30:00Z"));
+
+            when(transactionService.updateTransactionMetadata(
+                            any(Long.class), any(UpdateTransactionRequest.class)))
+                    .thenReturn(response);
+
+            UpdateTransactionRequest request =
+                    new UpdateTransactionRequest("New Description", "New Location");
+
+            mockMvc.perform(
+                            patch("/api/v1/transactions/1")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(1))
+                    .andExpect(jsonPath("$.description").value("New Description"))
+                    .andExpect(jsonPath("$.location").value("New Location"));
+        }
+
+        @Test
+        @DisplayName("PATCH /api/v1/transactions/{id} returns 400 when immutable field provided")
+        void updateTransaction_withImmutableField_shouldReturn400() throws Exception {
+            when(transactionService.updateTransactionMetadata(
+                            any(Long.class), any(UpdateTransactionRequest.class)))
+                    .thenThrow(
+                            new BusinessRuleException(
+                                    ErrorCode.IMMUTABLE_FIELD,
+                                    "Financial attributes are immutable"));
+
+            UpdateTransactionRequest request =
+                    new UpdateTransactionRequest(
+                            "Desc",
+                            "Loc",
+                            new BigDecimal("50000.00"),
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null);
+
+            mockMvc.perform(
+                            patch("/api/v1/transactions/1")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.code").value("IMMUTABLE_FIELD"));
+        }
+
+        @Test
+        @DisplayName("PATCH /api/v1/transactions/{id} returns 404 when transaction not found")
+        void updateTransaction_whenNotFound_shouldReturn404() throws Exception {
+            when(transactionService.updateTransactionMetadata(
+                            any(Long.class), any(UpdateTransactionRequest.class)))
+                    .thenThrow(new ResourceNotFoundException("Transaction", 999L));
+
+            UpdateTransactionRequest request = new UpdateTransactionRequest("Desc", "Loc");
+
+            mockMvc.perform(
+                            patch("/api/v1/transactions/999")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.status").value(404))
+                    .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /api/v1/transactions/{id} Tests")
+    class ReverseTransactionTests {
+
+        @Test
+        @DisplayName("DELETE /api/v1/transactions/{id} returns 200 with reversal response")
+        void reverseTransaction_whenValid_shouldReturn200() throws Exception {
+            TransactionResponse response =
+                    new TransactionResponse(
+                            2L,
+                            "TXN-REV-001",
+                            TransactionType.REVERSAL,
+                            TransactionStatus.COMPLETED,
+                            new BigDecimal("500000.00"),
+                            BigDecimal.ZERO,
+                            10L,
+                            null,
+                            new BigDecimal("1000000.00"),
+                            null,
+                            new BigDecimal("-500000.00"),
+                            "HN Branch",
+                            "Reversal of TXN-DEP001",
+                            Instant.parse("2026-10-12T15:00:00Z"),
+                            1L);
+
+            when(transactionService.reverseTransaction(1L)).thenReturn(response);
+
+            mockMvc.perform(delete("/api/v1/transactions/1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(2))
+                    .andExpect(jsonPath("$.type").value("REVERSAL"))
+                    .andExpect(jsonPath("$.status").value("COMPLETED"))
+                    .andExpect(jsonPath("$.reversalOfId").value(1));
+        }
+
+        @Test
+        @DisplayName("DELETE /api/v1/transactions/{id} returns 409 when already reversed")
+        void reverseTransaction_whenAlreadyReversed_shouldReturn409() throws Exception {
+            when(transactionService.reverseTransaction(1L))
+                    .thenThrow(
+                            new BusinessRuleException(
+                                    ErrorCode.ALREADY_REVERSED,
+                                    "Transaction has already been reversed"));
+
+            mockMvc.perform(delete("/api/v1/transactions/1"))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.status").value(409))
+                    .andExpect(jsonPath("$.code").value("ALREADY_REVERSED"));
+        }
+
+        @Test
+        @DisplayName(
+                "DELETE /api/v1/transactions/{id} returns 422 when recipient has insufficient"
+                        + " balance")
+        void reverseTransaction_whenInsufficientBalance_shouldReturn422() throws Exception {
+            when(transactionService.reverseTransaction(1L))
+                    .thenThrow(
+                            new BusinessRuleException(
+                                    ErrorCode.INSUFFICIENT_BALANCE,
+                                    "Insufficient account balance"));
+
+            mockMvc.perform(delete("/api/v1/transactions/1"))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.status").value(422))
+                    .andExpect(jsonPath("$.code").value("INSUFFICIENT_BALANCE"));
+        }
+
+        @Test
+        @DisplayName("DELETE /api/v1/transactions/{id} returns 404 when transaction not found")
+        void reverseTransaction_whenNotFound_shouldReturn404() throws Exception {
+            when(transactionService.reverseTransaction(999L))
+                    .thenThrow(new ResourceNotFoundException("Transaction", 999L));
+
+            mockMvc.perform(delete("/api/v1/transactions/999"))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.status").value(404))
+                    .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         }
     }
 }

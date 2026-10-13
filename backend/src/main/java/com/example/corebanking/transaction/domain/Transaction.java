@@ -1,6 +1,8 @@
 package com.example.corebanking.transaction.domain;
 
 import com.example.corebanking.common.domain.BaseEntity;
+import com.example.corebanking.common.domain.BusinessRuleException;
+import com.example.corebanking.common.domain.ErrorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -62,10 +64,10 @@ public class Transaction extends BaseEntity {
     @Column(name = "system_balance_delta", nullable = false, updatable = false)
     private BigDecimal systemBalanceDelta;
 
-    @Column(name = "location", length = 255, updatable = false)
+    @Column(name = "location", length = 255)
     private String location;
 
-    @Column(name = "description", length = 500, updatable = false)
+    @Column(name = "description", length = 500)
     private String description;
 
     @Enumerated(EnumType.STRING)
@@ -224,6 +226,178 @@ public class Transaction extends BaseEntity {
                 .systemBalanceDelta(systemDelta)
                 .location(location)
                 .description(description)
+                .build();
+    }
+
+    /**
+     * Updates mutable transaction metadata (description and location only).
+     *
+     * @param newDescription updated description string
+     * @param newLocation updated location string
+     */
+    public void updateMetadata(String newDescription, String newLocation) {
+        if (this.status != TransactionStatus.COMPLETED) {
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Cannot update metadata on transaction with status: " + this.status);
+        }
+        if (newDescription != null) {
+            this.description = newDescription;
+        }
+        if (newLocation != null) {
+            this.location = newLocation;
+        }
+    }
+
+    /** Marks this transaction as reversed. */
+    public void markReversed() {
+        if (this.status == TransactionStatus.REVERSED) {
+            throw new BusinessRuleException(
+                    ErrorCode.ALREADY_REVERSED, "Transaction has already been reversed");
+        }
+        if (this.type == TransactionType.REVERSAL) {
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION, "Cannot reverse a reversal transaction");
+        }
+        this.status = TransactionStatus.REVERSED;
+    }
+
+    /** Factory method creating a reversal for a DEPOSIT transaction. */
+    public static Transaction createDepositReversal(
+            String referenceNo,
+            Transaction original,
+            BigDecimal targetBalanceAfter,
+            String location,
+            String description) {
+        Objects.requireNonNull(referenceNo, "referenceNo must not be null");
+        Objects.requireNonNull(original, "original must not be null");
+        Objects.requireNonNull(targetBalanceAfter, "targetBalanceAfter must not be null");
+
+        BigDecimal scaledBalance = targetBalanceAfter.setScale(2, RoundingMode.HALF_UP);
+        String effectiveDesc =
+                description != null ? description : "Reversal of " + original.getReferenceNo();
+        String effectiveLoc = location != null ? location : original.getLocation();
+
+        return Transaction.builder()
+                .referenceNo(referenceNo)
+                .type(TransactionType.REVERSAL)
+                .status(TransactionStatus.COMPLETED)
+                .sourceAccountId(original.getTargetAccountId())
+                .targetAccountId(null)
+                .amount(original.getAmount())
+                .fee(BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP))
+                .sourceBalanceAfter(scaledBalance)
+                .targetBalanceAfter(null)
+                .systemBalanceDelta(original.getAmount().negate())
+                .reversalOfId(original.getId())
+                .location(effectiveLoc)
+                .description(effectiveDesc)
+                .build();
+    }
+
+    /** Factory method creating a reversal for a WITHDRAWAL transaction. */
+    public static Transaction createWithdrawalReversal(
+            String referenceNo,
+            Transaction original,
+            BigDecimal sourceBalanceAfter,
+            String location,
+            String description) {
+        Objects.requireNonNull(referenceNo, "referenceNo must not be null");
+        Objects.requireNonNull(original, "original must not be null");
+        Objects.requireNonNull(sourceBalanceAfter, "sourceBalanceAfter must not be null");
+
+        BigDecimal scaledBalance = sourceBalanceAfter.setScale(2, RoundingMode.HALF_UP);
+        String effectiveDesc =
+                description != null ? description : "Reversal of " + original.getReferenceNo();
+        String effectiveLoc = location != null ? location : original.getLocation();
+        BigDecimal systemDelta =
+                original.getAmount().add(original.getFee()).setScale(2, RoundingMode.HALF_UP);
+
+        return Transaction.builder()
+                .referenceNo(referenceNo)
+                .type(TransactionType.REVERSAL)
+                .status(TransactionStatus.COMPLETED)
+                .sourceAccountId(null)
+                .targetAccountId(original.getSourceAccountId())
+                .amount(original.getAmount())
+                .fee(original.getFee())
+                .sourceBalanceAfter(null)
+                .targetBalanceAfter(scaledBalance)
+                .systemBalanceDelta(systemDelta)
+                .reversalOfId(original.getId())
+                .location(effectiveLoc)
+                .description(effectiveDesc)
+                .build();
+    }
+
+    /** Factory method creating a reversal for a PAYMENT transaction. */
+    public static Transaction createPaymentReversal(
+            String referenceNo,
+            Transaction original,
+            BigDecimal sourceBalanceAfter,
+            String location,
+            String description) {
+        Objects.requireNonNull(referenceNo, "referenceNo must not be null");
+        Objects.requireNonNull(original, "original must not be null");
+        Objects.requireNonNull(sourceBalanceAfter, "sourceBalanceAfter must not be null");
+
+        BigDecimal scaledBalance = sourceBalanceAfter.setScale(2, RoundingMode.HALF_UP);
+        String effectiveDesc =
+                description != null ? description : "Reversal of " + original.getReferenceNo();
+        String effectiveLoc = location != null ? location : original.getLocation();
+        BigDecimal systemDelta =
+                original.getAmount().add(original.getFee()).setScale(2, RoundingMode.HALF_UP);
+
+        return Transaction.builder()
+                .referenceNo(referenceNo)
+                .type(TransactionType.REVERSAL)
+                .status(TransactionStatus.COMPLETED)
+                .sourceAccountId(null)
+                .targetAccountId(original.getSourceAccountId())
+                .amount(original.getAmount())
+                .fee(original.getFee())
+                .sourceBalanceAfter(null)
+                .targetBalanceAfter(scaledBalance)
+                .systemBalanceDelta(systemDelta)
+                .reversalOfId(original.getId())
+                .location(effectiveLoc)
+                .description(effectiveDesc)
+                .build();
+    }
+
+    /** Factory method creating a reversal for a TRANSFER transaction. */
+    public static Transaction createTransferReversal(
+            String referenceNo,
+            Transaction original,
+            BigDecimal sourceBalanceAfter,
+            BigDecimal targetBalanceAfter,
+            String location,
+            String description) {
+        Objects.requireNonNull(referenceNo, "referenceNo must not be null");
+        Objects.requireNonNull(original, "original must not be null");
+        Objects.requireNonNull(sourceBalanceAfter, "sourceBalanceAfter must not be null");
+        Objects.requireNonNull(targetBalanceAfter, "targetBalanceAfter must not be null");
+
+        BigDecimal scaledSourceBalance = sourceBalanceAfter.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal scaledTargetBalance = targetBalanceAfter.setScale(2, RoundingMode.HALF_UP);
+        String effectiveDesc =
+                description != null ? description : "Reversal of " + original.getReferenceNo();
+        String effectiveLoc = location != null ? location : original.getLocation();
+
+        return Transaction.builder()
+                .referenceNo(referenceNo)
+                .type(TransactionType.REVERSAL)
+                .status(TransactionStatus.COMPLETED)
+                .sourceAccountId(original.getTargetAccountId())
+                .targetAccountId(original.getSourceAccountId())
+                .amount(original.getAmount())
+                .fee(original.getFee())
+                .sourceBalanceAfter(scaledSourceBalance)
+                .targetBalanceAfter(scaledTargetBalance)
+                .systemBalanceDelta(original.getFee())
+                .reversalOfId(original.getId())
+                .location(effectiveLoc)
+                .description(effectiveDesc)
                 .build();
     }
 }

@@ -35,7 +35,43 @@ public record TransactionResponse(
         @Schema(
                         description = "Thời điểm khởi tạo giao dịch (UTC)",
                         example = "2026-10-12T14:30:00Z")
-                Instant createdAt) {
+                Instant createdAt,
+        @Schema(description = "ID của giao dịch gốc được đảo (nếu là REVERSAL)", example = "100")
+                Long reversalOfId) {
+
+    /** Backward-compatible constructor without reversalOfId. */
+    public TransactionResponse(
+            Long id,
+            String referenceNo,
+            TransactionType type,
+            TransactionStatus status,
+            BigDecimal amount,
+            BigDecimal fee,
+            Long sourceAccountId,
+            Long targetAccountId,
+            BigDecimal sourceBalanceAfter,
+            BigDecimal targetBalanceAfter,
+            BigDecimal systemBalanceDelta,
+            String location,
+            String description,
+            Instant createdAt) {
+        this(
+                id,
+                referenceNo,
+                type,
+                status,
+                amount,
+                fee,
+                sourceAccountId,
+                targetAccountId,
+                sourceBalanceAfter,
+                targetBalanceAfter,
+                systemBalanceDelta,
+                location,
+                description,
+                createdAt,
+                null);
+    }
 
     /** Maps a Transaction JPA domain entity to its corresponding API response DTO. */
     public static TransactionResponse from(Transaction entity) {
@@ -53,6 +89,7 @@ public record TransactionResponse(
                 entity.getSystemBalanceDelta(),
                 entity.getLocation(),
                 entity.getDescription(),
-                entity.getCreatedAt());
+                entity.getCreatedAt(),
+                entity.getReversalOfId());
     }
 }
