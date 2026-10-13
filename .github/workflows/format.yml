@@ -1,0 +1,51 @@
+name: Format Code
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to format'
+        required: true
+        default: 'feat/2-5-withdraw-and-transfer-with-limits'
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    name: Run Spotless Apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+          cache-dependency-path: 'backend/pom.xml'
+
+      - name: Ensure Maven Wrapper is executable
+        run: chmod +x backend/mvnw
+
+      - name: Run Spotless Apply
+        run: |
+          cd backend
+          ./mvnw -B spotless:apply
+
+      - name: Commit & Push Changes
+        run: |
+          git config user.name "Nguyễn Việt Thành"
+          git config user.email "vietthanhnguyen.tsen@gmail.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "style: apply spotless code formatting [P19]"
+            git push origin ${{ github.event.inputs.branch }}
+          else
+            echo "No formatting changes detected."
+          fi
