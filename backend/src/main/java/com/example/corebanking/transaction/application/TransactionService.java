@@ -22,6 +22,7 @@ import com.example.corebanking.transaction.domain.event.TransactionCompletedEven
 import com.example.corebanking.transaction.infrastructure.TransactionReferenceGenerator;
 import com.example.corebanking.transaction.infrastructure.TransactionRepository;
 import com.example.corebanking.transaction.infrastructure.TransactionSpecifications;
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -88,7 +89,7 @@ public class TransactionService {
                         .findByIdForUpdate(request.accountId())
                         .orElseThrow(
                                 () ->
-                                         new ResourceNotFoundException(
+                                        new ResourceNotFoundException(
                                                 "Account", request.accountId()));
 
         Money depositAmount = Money.of(request.amount());
@@ -151,7 +152,7 @@ public class TransactionService {
         limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
 
         Money fee = feePolicy.calculateFee(TransactionType.WITHDRAWAL, amount);
-        Money totalDebit = amount.add(fee);
+        Money totalDebit = amount.plus(fee);
         account.debit(totalDebit);
 
         String referenceNo = referenceGenerator.generate();
@@ -218,10 +219,8 @@ public class TransactionService {
                         .findByIdForUpdate(secondId)
                         .orElseThrow(() -> new ResourceNotFoundException("Account", secondId));
 
-        Account source =
-                request.sourceAccountId().equals(firstId) ? firstAccount : secondAccount;
-        Account target =
-                request.targetAccountId().equals(firstId) ? firstAccount : secondAccount;
+        Account source = request.sourceAccountId().equals(firstId) ? firstAccount : secondAccount;
+        Account target = request.targetAccountId().equals(firstId) ? firstAccount : secondAccount;
 
         Money amount = Money.of(request.amount());
         BigDecimal dailySpent =
@@ -230,7 +229,7 @@ public class TransactionService {
         limitPolicy.validateLimits(source, amount, Money.of(dailySpent));
 
         Money fee = feePolicy.calculateFee(TransactionType.TRANSFER, amount);
-        Money totalDebit = amount.add(fee);
+        Money totalDebit = amount.plus(fee);
 
         source.debit(totalDebit);
         target.credit(amount);
@@ -295,7 +294,7 @@ public class TransactionService {
         limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
 
         Money fee = feePolicy.calculateFee(TransactionType.PAYMENT, amount);
-        Money totalDebit = amount.add(fee);
+        Money totalDebit = amount.plus(fee);
         account.debit(totalDebit);
 
         String referenceNo = referenceGenerator.generate();
@@ -344,7 +343,6 @@ public class TransactionService {
     private Instant getStartOfDay() {
         return LocalDate.now(clock).atStartOfDay(BUSINESS_ZONE).toInstant();
     }
-
 
     /**
      * Retrieves transaction details by ID.

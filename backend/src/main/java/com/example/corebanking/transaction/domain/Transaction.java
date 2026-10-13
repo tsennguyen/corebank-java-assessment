@@ -171,10 +171,8 @@ public class Transaction extends BaseEntity {
         BigDecimal scaledAmount = amount.setScale(2, RoundingMode.HALF_UP);
         BigDecimal scaledFee =
                 (fee != null ? fee : BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal scaledSourceBalanceAfter =
-                sourceBalanceAfter.setScale(2, RoundingMode.HALF_UP);
-        BigDecimal scaledTargetBalanceAfter =
-                targetBalanceAfter.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal scaledSourceBalanceAfter = sourceBalanceAfter.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal scaledTargetBalanceAfter = targetBalanceAfter.setScale(2, RoundingMode.HALF_UP);
         BigDecimal systemDelta = scaledFee.negate();
 
         return Transaction.builder()
@@ -229,4 +227,3 @@ public class Transaction extends BaseEntity {
                 .build();
     }
 }
-

@@ -296,8 +296,7 @@ class AccountTest {
         assertThatThrownBy(
                         () ->
                                 account.debit(
-                                        com.example.corebanking.common.domain.Money.of(
-                                                "-1000.00")))
+                                        com.example.corebanking.common.domain.Money.of("-1000.00")))
                 .isInstanceOf(BusinessRuleException.class)
                 .satisfies(
                         ex ->
@@ -320,8 +319,7 @@ class AccountTest {
         assertThatThrownBy(
                         () ->
                                 account.debit(
-                                        com.example.corebanking.common.domain.Money.of(
-                                                "10000.00")))
+                                        com.example.corebanking.common.domain.Money.of("10000.00")))
                 .isInstanceOf(BusinessRuleException.class)
                 .satisfies(
                         ex ->
@@ -329,4 +327,3 @@ class AccountTest {
                                         .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE));
     }
 }
-

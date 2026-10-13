@@ -4,9 +4,7 @@ import com.example.corebanking.transaction.domain.TransactionType;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/**
- * Domain event published when a financial transaction is successfully processed and committed.
- */
+/** Domain event published when a financial transaction is successfully processed and committed. */
 public record TransactionCompletedEvent(
         Long transactionId,
         String referenceNo,

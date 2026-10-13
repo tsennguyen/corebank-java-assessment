@@ -19,8 +19,8 @@ public class LimitPolicy {
     }
 
     /**
-     * Validates that the requested amount respects both the per-transaction limit and the
-     * aggregate daily spending limit.
+     * Validates that the requested amount respects both the per-transaction limit and the aggregate
+     * daily spending limit.
      *
      * @param account source account to evaluate
      * @param amount principal transaction amount
@@ -48,10 +48,7 @@ public class LimitPolicy {
         if (dailyLimit != null && totalDaily.compareTo(dailyLimit) > 0) {
             throw new BusinessRuleException(
                     ErrorCode.DAILY_LIMIT_EXCEEDED,
-                    "Total daily spending "
-                            + totalDaily
-                            + " exceeds daily limit of "
-                            + dailyLimit);
+                    "Total daily spending " + totalDaily + " exceeds daily limit of " + dailyLimit);
         }
     }
 }

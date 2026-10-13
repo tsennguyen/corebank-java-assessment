@@ -153,8 +153,8 @@ public class Account extends BaseEntity {
     }
 
     /**
-     * Debits (withdraws/deducts) funds from the account. Enforces that the account is active,
-     * the amount is positive, and the balance is sufficient.
+     * Debits (withdraws/deducts) funds from the account. Enforces that the account is active, the
+     * amount is positive, and the balance is sufficient.
      *
      * @param debitAmount amount to debit
      */
@@ -166,8 +166,7 @@ public class Account extends BaseEntity {
         }
         if (!isActive()) {
             throw new BusinessRuleException(
-                    ErrorCode.ACCOUNT_NOT_ACTIVE,
-                    "Cannot debit account in status: " + this.status);
+                    ErrorCode.ACCOUNT_NOT_ACTIVE, "Cannot debit account in status: " + this.status);
         }
         if (this.balance.compareTo(debitAmount.getAmount()) < 0) {
             throw new BusinessRuleException(

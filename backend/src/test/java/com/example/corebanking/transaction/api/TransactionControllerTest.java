@@ -148,7 +148,8 @@ class TransactionControllerTest {
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
-                    .andExpect(header().string("Location", containsString("/api/v1/transactions/100")))
+                    .andExpect(
+                            header().string("Location", containsString("/api/v1/transactions/100")))
                     .andExpect(jsonPath("$.id").value(100))
                     .andExpect(jsonPath("$.referenceNo").value("TXN-20261012-ABC123DEF456"))
                     .andExpect(jsonPath("$.type").value("DEPOSIT"))
@@ -277,7 +278,8 @@ class TransactionControllerTest {
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
-                    .andExpect(header().string("Location", containsString("/api/v1/transactions/101")))
+                    .andExpect(
+                            header().string("Location", containsString("/api/v1/transactions/101")))
                     .andExpect(jsonPath("$.id").value(101))
                     .andExpect(jsonPath("$.type").value("WITHDRAWAL"))
                     .andExpect(jsonPath("$.status").value("COMPLETED"))
@@ -305,8 +307,7 @@ class TransactionControllerTest {
         @DisplayName("returns 422 when balance is insufficient")
         void withdraw_whenInsufficientBalance_shouldReturn422() throws Exception {
             WithdrawalRequest request =
-                    new WithdrawalRequest(
-                            1L, new BigDecimal("5000000.00"), "ATM", "Vượt số dư");
+                    new WithdrawalRequest(1L, new BigDecimal("5000000.00"), "ATM", "Vượt số dư");
 
             when(transactionService.withdraw(any(WithdrawalRequest.class)))
                     .thenThrow(
@@ -327,8 +328,7 @@ class TransactionControllerTest {
         @DisplayName("returns 422 when per-transaction limit exceeded")
         void withdraw_whenLimitExceeded_shouldReturn422() throws Exception {
             WithdrawalRequest request =
-                    new WithdrawalRequest(
-                            1L, new BigDecimal("60000000.00"), "ATM", "Vượt hạn mức");
+                    new WithdrawalRequest(1L, new BigDecimal("60000000.00"), "ATM", "Vượt hạn mức");
 
             when(transactionService.withdraw(any(WithdrawalRequest.class)))
                     .thenThrow(
@@ -392,7 +392,8 @@ class TransactionControllerTest {
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
-                    .andExpect(header().string("Location", containsString("/api/v1/transactions/102")))
+                    .andExpect(
+                            header().string("Location", containsString("/api/v1/transactions/102")))
                     .andExpect(jsonPath("$.id").value(102))
                     .andExpect(jsonPath("$.type").value("TRANSFER"))
                     .andExpect(jsonPath("$.status").value("COMPLETED"))
@@ -459,8 +460,7 @@ class TransactionControllerTest {
                             "Thanh toán cước",
                             "EVN");
             TransactionResponse response =
-                    createPaymentResponse(
-                            103L, 1L, new BigDecimal("500000.00"), BigDecimal.ZERO);
+                    createPaymentResponse(103L, 1L, new BigDecimal("500000.00"), BigDecimal.ZERO);
 
             when(transactionService.payment(any(PaymentRequest.class))).thenReturn(response);
 
@@ -469,7 +469,8 @@ class TransactionControllerTest {
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
-                    .andExpect(header().string("Location", containsString("/api/v1/transactions/103")))
+                    .andExpect(
+                            header().string("Location", containsString("/api/v1/transactions/103")))
                     .andExpect(jsonPath("$.id").value(103))
                     .andExpect(jsonPath("$.type").value("PAYMENT"))
                     .andExpect(jsonPath("$.status").value("COMPLETED"))

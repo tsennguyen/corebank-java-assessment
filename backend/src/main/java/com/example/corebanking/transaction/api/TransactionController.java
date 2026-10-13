@@ -89,8 +89,8 @@ public class TransactionController {
     @Operation(
             summary = "Rút tiền từ tài khoản",
             description =
-                    "Ghi nợ (debit) tiền mặt từ tài khoản kèm tính phí và kiểm tra hạn mức giao dịch"
-                            + " / hạn mức ngày, cập nhật số dư nguyên tử.")
+                    "Ghi nợ (debit) tiền mặt từ tài khoản kèm tính phí và kiểm tra hạn mức giao"
+                            + " dịch / hạn mức ngày, cập nhật số dư nguyên tử.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "201",
@@ -131,8 +131,8 @@ public class TransactionController {
     @Operation(
             summary = "Chuyển khoản nội bộ giữa hai tài khoản",
             description =
-                    "Chuyển tiền giữa hai tài khoản với cơ chế khóa bi quan sắp xếp ID tăng dần chống"
-                            + " deadlock, kiểm tra hạn mức và tự động tính phí.")
+                    "Chuyển tiền giữa hai tài khoản với cơ chế khóa bi quan sắp xếp ID tăng dần"
+                            + " chống deadlock, kiểm tra hạn mức và tự động tính phí.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "201",
@@ -173,8 +173,8 @@ public class TransactionController {
     @Operation(
             summary = "Thanh toán dịch vụ / hóa đơn",
             description =
-                    "Ghi nợ tài khoản để thanh toán dịch vụ hoặc hóa đơn kèm kiểm tra hạn mức và tính"
-                            + " phí.")
+                    "Ghi nợ tài khoản để thanh toán dịch vụ hoặc hóa đơn kèm kiểm tra hạn mức và"
+                            + " tính phí.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "201",
@@ -198,8 +198,7 @@ public class TransactionController {
                 description = "Không đủ số dư, vượt hạn mức hoặc tài khoản không hoạt động",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
-    public ResponseEntity<TransactionResponse> payment(
-            @Valid @RequestBody PaymentRequest request) {
+    public ResponseEntity<TransactionResponse> payment(@Valid @RequestBody PaymentRequest request) {
         TransactionResponse response = transactionService.payment(request);
         URI location =
                 ServletUriComponentsBuilder.fromCurrentContextPath()
@@ -208,7 +207,6 @@ public class TransactionController {
                         .toUri();
         return ResponseEntity.created(location).body(response);
     }
-
 
     @GetMapping("/{id}")
     @Operation(

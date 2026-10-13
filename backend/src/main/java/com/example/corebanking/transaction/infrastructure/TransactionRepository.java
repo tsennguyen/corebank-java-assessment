@@ -35,4 +35,3 @@ public interface TransactionRepository
             @Param("status") TransactionStatus status,
             @Param("since") Instant since);
 }
-

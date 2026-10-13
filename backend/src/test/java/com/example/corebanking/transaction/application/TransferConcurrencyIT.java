@@ -114,10 +114,8 @@ class TransferConcurrencyIT extends IntegrationTestBase {
         }
         executor.shutdown();
 
-        Account finalAccountA =
-                accountRepository.findById(savedAccountA.getId()).orElseThrow();
-        Account finalAccountB =
-                accountRepository.findById(savedAccountB.getId()).orElseThrow();
+        Account finalAccountA = accountRepository.findById(savedAccountA.getId()).orElseThrow();
+        Account finalAccountB = accountRepository.findById(savedAccountB.getId()).orElseThrow();
 
         // 5 * 100k out and 5 * 100k in -> net balance unchanged
         assertThat(finalAccountA.getBalance()).isEqualByComparingTo("10000000.00");

@@ -105,10 +105,7 @@ class TransactionServiceTest {
 
     private Account createActiveAccount() {
         return createAccount(
-                1L,
-                BigDecimal.ZERO,
-                new BigDecimal("50000000.00"),
-                new BigDecimal("100000000.00"));
+                1L, BigDecimal.ZERO, new BigDecimal("50000000.00"), new BigDecimal("100000000.00"));
     }
 
     // ==========================================
@@ -228,8 +225,7 @@ class TransactionServiceTest {
             assertThat(response.sourceBalanceAfter()).isEqualByComparingTo("3998000.00");
             assertThat(response.systemBalanceDelta()).isEqualByComparingTo("-1002000.00");
 
-            verify(limitPolicy)
-                    .validateLimits(account, Money.of("1000000.00"), Money.of("0.00"));
+            verify(limitPolicy).validateLimits(account, Money.of("1000000.00"), Money.of("0.00"));
             verify(eventPublisher).publishEvent(any(TransactionCompletedEvent.class));
         }
 
@@ -246,7 +242,8 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("withdraw() throws INSUFFICIENT_BALANCE when balance is less than amount + fee")
+        @DisplayName(
+                "withdraw() throws INSUFFICIENT_BALANCE when balance is less than amount + fee")
         void withdraw_whenInsufficientBalance_shouldThrowInsufficientBalance() {
             Account account =
                     createAccount(
@@ -255,8 +252,7 @@ class TransactionServiceTest {
                             new BigDecimal("50000000.00"),
                             new BigDecimal("100000000.00"));
             WithdrawalRequest request =
-                    new WithdrawalRequest(
-                            1L, new BigDecimal("1000000.00"), "ATM", "Rút hết");
+                    new WithdrawalRequest(1L, new BigDecimal("1000000.00"), "ATM", "Rút hết");
 
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account));
             when(transactionRepository.sumOutgoingAmountSince(
@@ -283,8 +279,7 @@ class TransactionServiceTest {
                             new BigDecimal("50000000.00"),
                             new BigDecimal("100000000.00"));
             WithdrawalRequest request =
-                    new WithdrawalRequest(
-                            1L, new BigDecimal("60000000.00"), "ATM", "Vượt hạn mức");
+                    new WithdrawalRequest(1L, new BigDecimal("60000000.00"), "ATM", "Vượt hạn mức");
 
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account));
             when(transactionRepository.sumOutgoingAmountSince(
@@ -360,7 +355,9 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("transfer() acquires pessimistic locks in ascending ID order (fromId > toId, NC-01)")
+        @DisplayName(
+                "transfer() acquires pessimistic locks in ascending ID order (fromId > toId,"
+                        + " NC-01)")
         void transfer_whenFromIdGreaterThanToId_shouldLockInAscendingOrder() {
             Account source =
                     createAccount(
@@ -421,8 +418,7 @@ class TransactionServiceTest {
         @DisplayName("transfer() throws RESOURCE_NOT_FOUND when source account does not exist")
         void transfer_whenSourceNotFound_shouldThrowResourceNotFound() {
             TransferRequest request =
-                    new TransferRequest(
-                            999L, 1L, new BigDecimal("100000.00"), "Mobile", "Chuyển");
+                    new TransferRequest(999L, 1L, new BigDecimal("100000.00"), "Mobile", "Chuyển");
             when(accountRepository.findByIdForUpdate(1L))
                     .thenReturn(Optional.of(createActiveAccount()));
             when(accountRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
@@ -433,7 +429,9 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("transfer() throws INSUFFICIENT_BALANCE when source balance cannot cover amount + fee")
+        @DisplayName(
+                "transfer() throws INSUFFICIENT_BALANCE when source balance cannot cover amount +"
+                        + " fee")
         void transfer_whenInsufficientBalance_shouldThrowInsufficientBalance() {
             Account source =
                     createAccount(
@@ -476,7 +474,9 @@ class TransactionServiceTest {
     class PaymentTests {
 
         @Test
-        @DisplayName("payment() debits account, appends recipientInfo to description, and saves transaction")
+        @DisplayName(
+                "payment() debits account, appends recipientInfo to description, and saves"
+                        + " transaction")
         void payment_whenValid_shouldDebitBalanceAndAppendRecipientInfo() {
             Account account =
                     createAccount(
@@ -513,8 +513,7 @@ class TransactionServiceTest {
             assertThat(response.description()).isEqualTo("Tiền điện tháng 10 | EVN HCMC");
             assertThat(response.systemBalanceDelta()).isEqualByComparingTo("-500000.00");
 
-            verify(limitPolicy)
-                    .validateLimits(account, Money.of("500000.00"), Money.of("0.00"));
+            verify(limitPolicy).validateLimits(account, Money.of("500000.00"), Money.of("0.00"));
             verify(eventPublisher).publishEvent(any(TransactionCompletedEvent.class));
         }
 
@@ -558,7 +557,8 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("getTransactionById() throws RESOURCE_NOT_FOUND when transaction does not exist")
+        @DisplayName(
+                "getTransactionById() throws RESOURCE_NOT_FOUND when transaction does not exist")
         void getTransactionById_whenNotFound_shouldThrowResourceNotFound() {
             when(transactionRepository.findById(999L)).thenReturn(Optional.empty());
 
@@ -568,7 +568,8 @@ class TransactionServiceTest {
         }
 
         @Test
-        @DisplayName("getAccountTransactions() throws RESOURCE_NOT_FOUND when account does not exist")
+        @DisplayName(
+                "getAccountTransactions() throws RESOURCE_NOT_FOUND when account does not exist")
         void getAccountTransactions_whenAccountNotFound_shouldThrowResourceNotFound() {
             when(accountRepository.existsById(999L)).thenReturn(false);
 

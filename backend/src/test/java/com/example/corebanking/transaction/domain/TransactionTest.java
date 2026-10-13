@@ -94,7 +94,9 @@ class TransactionTest {
     class CreateWithdrawalTests {
 
         @Test
-        @DisplayName("createWithdrawal initializes a valid withdrawal record with negative system balance delta")
+        @DisplayName(
+                "createWithdrawal initializes a valid withdrawal record with negative system"
+                        + " balance delta")
         void createWithdrawal_shouldInitializeValidRecord() {
             Transaction tx =
                     Transaction.createWithdrawal(
@@ -126,7 +128,9 @@ class TransactionTest {
     class CreateTransferTests {
 
         @Test
-        @DisplayName("createTransfer initializes valid transfer record with fee as negative system delta")
+        @DisplayName(
+                "createTransfer initializes valid transfer record with fee as negative system"
+                        + " delta")
         void createTransfer_shouldInitializeValidRecord() {
             Transaction tx =
                     Transaction.createTransfer(
