@@ -39,7 +39,7 @@ class TransactionReversalIT extends IntegrationTestBase {
                 new Customer(
                         "CUS9990004",
                         "Phan Văn Đảo",
-                        "000999888666",
+                        "000999888444",
                         "phanvandao@example.com",
                         "0900000004",
                         "Hà Nội",
