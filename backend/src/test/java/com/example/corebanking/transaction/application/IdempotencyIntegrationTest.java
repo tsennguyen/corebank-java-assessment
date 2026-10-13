@@ -37,11 +37,11 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
     void replayTransfer_shouldNotDeductMoneyTwice() {
         Customer customer =
                 new Customer(
-                        "CUS9990005",
+                        "CUS9990021",
                         "Đỗ Trùng Lặp",
-                        "000999888555",
-                        "dotrunglap@example.com",
-                        "0900000005",
+                        "000999111222",
+                        "idem_test1@example.com",
+                        "0900000021",
                         "Hà Nội",
                         "Hà Nội",
                         LocalDate.of(1990, 1, 1));
@@ -49,7 +49,7 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
 
         Account accountA =
                 new Account(
-                        "100999999005",
+                        "100999999021",
                         savedCustomer.getId(),
                         new BigDecimal("50000000.00"),
                         new BigDecimal("100000000.00"),
@@ -59,7 +59,7 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
 
         Account accountB =
                 new Account(
-                        "100999999006",
+                        "100999999022",
                         savedCustomer.getId(),
                         new BigDecimal("50000000.00"),
                         new BigDecimal("100000000.00"),
@@ -118,11 +118,11 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
     void failedTransferThenRetryWithSameKey_shouldSucceed() {
         Customer customer =
                 new Customer(
-                        "CUS9990006",
+                        "CUS9990022",
                         "Võ Thử Lại",
-                        "000999888666",
-                        "vothulai@example.com",
-                        "0900000006",
+                        "000999111333",
+                        "idem_test2@example.com",
+                        "0900000022",
                         "Đà Nẵng",
                         "Đà Nẵng",
                         LocalDate.of(1995, 3, 15));
@@ -130,7 +130,7 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
 
         Account accountA =
                 new Account(
-                        "100999999007",
+                        "100999999023",
                         savedCustomer.getId(),
                         new BigDecimal("50000000.00"),
                         new BigDecimal("100000000.00"),
@@ -140,7 +140,7 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
 
         Account accountB =
                 new Account(
-                        "100999999008",
+                        "100999999024",
                         savedCustomer.getId(),
                         new BigDecimal("50000000.00"),
                         new BigDecimal("100000000.00"),
@@ -186,11 +186,11 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
     void transferWithSameKeyDifferentPayload_shouldReturn422() {
         Customer customer =
                 new Customer(
-                        "CUS9990007",
+                        "CUS9990023",
                         "Lê Tái Dùng",
-                        "000999888777",
-                        "letaidung@example.com",
-                        "0900000007",
+                        "000999111444",
+                        "idem_test3@example.com",
+                        "0900000023",
                         "TP.HCM",
                         "TP.HCM",
                         LocalDate.of(1988, 8, 8));
@@ -198,7 +198,7 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
 
         Account accountA =
                 new Account(
-                        "100999999009",
+                        "100999999025",
                         savedCustomer.getId(),
                         new BigDecimal("50000000.00"),
                         new BigDecimal("100000000.00"),
@@ -208,7 +208,7 @@ class IdempotencyIntegrationTest extends IntegrationTestBase {
 
         Account accountB =
                 new Account(
-                        "100999999010",
+                        "100999999026",
                         savedCustomer.getId(),
                         new BigDecimal("50000000.00"),
                         new BigDecimal("100000000.00"),
