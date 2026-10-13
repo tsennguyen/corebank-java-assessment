@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.ServletWebRequest;
@@ -118,6 +119,40 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
         log.warn("Malformed JSON request [requestId={}]: {}", requestId, ex.getMessage());
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(headers).body(problemDetail);
+    }
+
+    /** Handles missing required request headers like Idempotency-Key. */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ProblemDetail> handleMissingRequestHeader(
+            MissingRequestHeaderException ex, WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        if ("Idempotency-Key".equalsIgnoreCase(ex.getHeaderName())) {
+            ErrorCode errorCode = ErrorCode.IDEMPOTENCY_KEY_MISSING;
+            ProblemDetail problemDetail =
+                    ProblemDetail.forStatusAndDetail(
+                            HttpStatus.BAD_REQUEST,
+                            "Required header 'Idempotency-Key' is missing or blank");
+            problemDetail.setTitle(errorCode.getDefaultTitle());
+            problemDetail.setType(URI.create(errorCode.getProblemTypeUri()));
+            problemDetail.setInstance(resolveInstanceUri(request));
+            problemDetail.setProperty(PROPERTY_CODE, errorCode.name());
+            problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+            problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+
+            log.warn("Missing Idempotency-Key header [requestId={}]", requestId);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problemDetail);
+        }
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.BAD_REQUEST,
+                        "Required header '" + ex.getHeaderName() + "' is missing");
+        problemDetail.setTitle(ErrorCode.VALIDATION_FAILED.getDefaultTitle());
+        problemDetail.setType(URI.create(ErrorCode.VALIDATION_FAILED.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, ErrorCode.VALIDATION_FAILED.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problemDetail);
     }
 
     /**

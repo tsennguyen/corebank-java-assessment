@@ -1,6 +1,9 @@
 package com.example.corebanking.transaction.api;
 
 import com.example.corebanking.common.api.PageResponse;
+import com.example.corebanking.common.domain.BusinessRuleException;
+import com.example.corebanking.common.domain.ErrorCode;
+import com.example.corebanking.common.idempotency.IdempotencyResult;
 import com.example.corebanking.transaction.api.dto.DepositRequest;
 import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
@@ -32,6 +35,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -54,20 +58,29 @@ public class TransactionController {
             summary = "Nạp tiền vào tài khoản",
             description =
                     "Ghi có (credit) tiền mặt vào tài khoản ngân hàng, cập nhật số dư nguyên tử với"
-                            + " khóa bi quan và tạo bản ghi kiểm toán giao dịch.")
+                        + " khóa bi quan và tạo bản ghi kiểm toán giao dịch. Hỗ trợ Idempotency-Key"
+                        + " chống trùng lặp.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "201",
                 description = "Nạp tiền thành công",
-                headers =
-                        @Header(
-                                name = "Location",
-                                description = "URI tài nguyên giao dịch vừa tạo",
-                                schema = @Schema(type = "string")),
+                headers = {
+                    @Header(
+                            name = "Location",
+                            description = "URI tài nguyên giao dịch vừa tạo",
+                            schema = @Schema(type = "string")),
+                    @Header(
+                            name = "Idempotent-Replayed",
+                            description =
+                                    "Trả về 'true' nếu kết quả được phát lại từ cache idempotent",
+                            schema = @Schema(type = "boolean"))
+                },
                 content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
         @ApiResponse(
                 responseCode = "400",
-                description = "Dữ liệu nạp tiền không hợp lệ (số tiền âm, định dạng sai)",
+                description =
+                        "Thiếu Idempotency-Key hoặc dữ liệu nạp tiền không hợp lệ (số tiền âm, định"
+                                + " dạng sai)",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
@@ -75,17 +88,29 @@ public class TransactionController {
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "422",
-                description = "Tài khoản không ở trạng thái hoạt động (CLOSED hoặc LOCKED)",
+                description =
+                        "Tài khoản không ở trạng thái hoạt động hoặc Idempotency-Key bị tái sử dụng"
+                                + " với payload khác",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
-    public ResponseEntity<TransactionResponse> deposit(@Valid @RequestBody DepositRequest request) {
-        TransactionResponse response = transactionService.deposit(request);
+    public ResponseEntity<TransactionResponse> deposit(
+            @Parameter(description = "Idempotency key chống trùng lặp giao dịch", required = true)
+                    @RequestHeader(value = "Idempotency-Key", required = false)
+                    String idempotencyKey,
+            @Valid @RequestBody DepositRequest request) {
+        validateIdempotencyKey(idempotencyKey);
+        IdempotencyResult<TransactionResponse> result =
+                transactionService.deposit(idempotencyKey, request);
         URI location =
                 ServletUriComponentsBuilder.fromCurrentContextPath()
                         .path("/api/v1/transactions/{id}")
-                        .buildAndExpand(response.id())
+                        .buildAndExpand(result.data().id())
                         .toUri();
-        return ResponseEntity.created(location).body(response);
+        var builder = ResponseEntity.created(location);
+        if (result.replayed()) {
+            builder.header("Idempotent-Replayed", "true");
+        }
+        return builder.body(result.data());
     }
 
     @PostMapping("/withdrawals")
@@ -93,20 +118,29 @@ public class TransactionController {
             summary = "Rút tiền từ tài khoản",
             description =
                     "Ghi nợ (debit) tiền mặt từ tài khoản kèm tính phí và kiểm tra hạn mức giao"
-                            + " dịch / hạn mức ngày, cập nhật số dư nguyên tử.")
+                        + " dịch / hạn mức ngày, cập nhật số dư nguyên tử. Hỗ trợ Idempotency-Key"
+                        + " chống trùng lặp.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "201",
                 description = "Rút tiền thành công",
-                headers =
-                        @Header(
-                                name = "Location",
-                                description = "URI tài nguyên giao dịch vừa tạo",
-                                schema = @Schema(type = "string")),
+                headers = {
+                    @Header(
+                            name = "Location",
+                            description = "URI tài nguyên giao dịch vừa tạo",
+                            schema = @Schema(type = "string")),
+                    @Header(
+                            name = "Idempotent-Replayed",
+                            description =
+                                    "Trả về 'true' nếu kết quả được phát lại từ cache idempotent",
+                            schema = @Schema(type = "boolean"))
+                },
                 content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
         @ApiResponse(
                 responseCode = "400",
-                description = "Dữ liệu rút tiền không hợp lệ (số tiền âm, định dạng sai)",
+                description =
+                        "Thiếu Idempotency-Key hoặc dữ liệu rút tiền không hợp lệ (số tiền âm, định"
+                                + " dạng sai)",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
@@ -115,19 +149,28 @@ public class TransactionController {
         @ApiResponse(
                 responseCode = "422",
                 description =
-                        "Không đủ số dư, vượt hạn mức giao dịch, vượt hạn mức ngày hoặc tài khoản"
-                                + " không hoạt động",
+                        "Không đủ số dư, vượt hạn mức giao dịch, vượt hạn mức ngày, tài khoản không"
+                                + " hoạt động hoặc Idempotency-Key bị tái sử dụng với payload khác",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<TransactionResponse> withdraw(
+            @Parameter(description = "Idempotency key chống trùng lặp giao dịch", required = true)
+                    @RequestHeader(value = "Idempotency-Key", required = false)
+                    String idempotencyKey,
             @Valid @RequestBody WithdrawalRequest request) {
-        TransactionResponse response = transactionService.withdraw(request);
+        validateIdempotencyKey(idempotencyKey);
+        IdempotencyResult<TransactionResponse> result =
+                transactionService.withdraw(idempotencyKey, request);
         URI location =
                 ServletUriComponentsBuilder.fromCurrentContextPath()
                         .path("/api/v1/transactions/{id}")
-                        .buildAndExpand(response.id())
+                        .buildAndExpand(result.data().id())
                         .toUri();
-        return ResponseEntity.created(location).body(response);
+        var builder = ResponseEntity.created(location);
+        if (result.replayed()) {
+            builder.header("Idempotent-Replayed", "true");
+        }
+        return builder.body(result.data());
     }
 
     @PostMapping("/transfers")
@@ -135,20 +178,29 @@ public class TransactionController {
             summary = "Chuyển khoản nội bộ giữa hai tài khoản",
             description =
                     "Chuyển tiền giữa hai tài khoản với cơ chế khóa bi quan sắp xếp ID tăng dần"
-                            + " chống deadlock, kiểm tra hạn mức và tự động tính phí.")
+                            + " chống deadlock, kiểm tra hạn mức và tự động tính phí. Hỗ trợ"
+                            + " Idempotency-Key chống trùng lặp.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "201",
                 description = "Chuyển tiền thành công",
-                headers =
-                        @Header(
-                                name = "Location",
-                                description = "URI tài nguyên giao dịch vừa tạo",
-                                schema = @Schema(type = "string")),
+                headers = {
+                    @Header(
+                            name = "Location",
+                            description = "URI tài nguyên giao dịch vừa tạo",
+                            schema = @Schema(type = "string")),
+                    @Header(
+                            name = "Idempotent-Replayed",
+                            description =
+                                    "Trả về 'true' nếu kết quả được phát lại từ cache idempotent",
+                            schema = @Schema(type = "boolean"))
+                },
                 content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
         @ApiResponse(
                 responseCode = "400",
-                description = "Dữ liệu không hợp lệ hoặc tài khoản nguồn và đích trùng nhau",
+                description =
+                        "Thiếu Idempotency-Key, dữ liệu không hợp lệ hoặc tài khoản nguồn và đích"
+                                + " trùng nhau",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
@@ -157,19 +209,28 @@ public class TransactionController {
         @ApiResponse(
                 responseCode = "422",
                 description =
-                        "Không đủ số dư, vượt hạn mức giao dịch, vượt hạn mức ngày hoặc tài khoản"
-                                + " không hoạt động",
+                        "Không đủ số dư, vượt hạn mức giao dịch, vượt hạn mức ngày, tài khoản không"
+                                + " hoạt động hoặc Idempotency-Key bị tái sử dụng với payload khác",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<TransactionResponse> transfer(
+            @Parameter(description = "Idempotency key chống trùng lặp giao dịch", required = true)
+                    @RequestHeader(value = "Idempotency-Key", required = false)
+                    String idempotencyKey,
             @Valid @RequestBody TransferRequest request) {
-        TransactionResponse response = transactionService.transfer(request);
+        validateIdempotencyKey(idempotencyKey);
+        IdempotencyResult<TransactionResponse> result =
+                transactionService.transfer(idempotencyKey, request);
         URI location =
                 ServletUriComponentsBuilder.fromCurrentContextPath()
                         .path("/api/v1/transactions/{id}")
-                        .buildAndExpand(response.id())
+                        .buildAndExpand(result.data().id())
                         .toUri();
-        return ResponseEntity.created(location).body(response);
+        var builder = ResponseEntity.created(location);
+        if (result.replayed()) {
+            builder.header("Idempotent-Replayed", "true");
+        }
+        return builder.body(result.data());
     }
 
     @PostMapping("/payments")
@@ -177,20 +238,26 @@ public class TransactionController {
             summary = "Thanh toán dịch vụ / hóa đơn",
             description =
                     "Ghi nợ tài khoản để thanh toán dịch vụ hoặc hóa đơn kèm kiểm tra hạn mức và"
-                            + " tính phí.")
+                            + " tính phí. Hỗ trợ Idempotency-Key chống trùng lặp.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "201",
                 description = "Thanh toán thành công",
-                headers =
-                        @Header(
-                                name = "Location",
-                                description = "URI tài nguyên giao dịch vừa tạo",
-                                schema = @Schema(type = "string")),
+                headers = {
+                    @Header(
+                            name = "Location",
+                            description = "URI tài nguyên giao dịch vừa tạo",
+                            schema = @Schema(type = "string")),
+                    @Header(
+                            name = "Idempotent-Replayed",
+                            description =
+                                    "Trả về 'true' nếu kết quả được phát lại từ cache idempotent",
+                            schema = @Schema(type = "boolean"))
+                },
                 content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
         @ApiResponse(
                 responseCode = "400",
-                description = "Dữ liệu thanh toán không hợp lệ",
+                description = "Thiếu Idempotency-Key hoặc dữ liệu thanh toán không hợp lệ",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
@@ -198,17 +265,37 @@ public class TransactionController {
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "422",
-                description = "Không đủ số dư, vượt hạn mức hoặc tài khoản không hoạt động",
+                description =
+                        "Không đủ số dư, vượt hạn mức, tài khoản không hoạt động hoặc"
+                                + " Idempotency-Key bị tái sử dụng với payload khác",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
-    public ResponseEntity<TransactionResponse> payment(@Valid @RequestBody PaymentRequest request) {
-        TransactionResponse response = transactionService.payment(request);
+    public ResponseEntity<TransactionResponse> payment(
+            @Parameter(description = "Idempotency key chống trùng lặp giao dịch", required = true)
+                    @RequestHeader(value = "Idempotency-Key", required = false)
+                    String idempotencyKey,
+            @Valid @RequestBody PaymentRequest request) {
+        validateIdempotencyKey(idempotencyKey);
+        IdempotencyResult<TransactionResponse> result =
+                transactionService.payment(idempotencyKey, request);
         URI location =
                 ServletUriComponentsBuilder.fromCurrentContextPath()
                         .path("/api/v1/transactions/{id}")
-                        .buildAndExpand(response.id())
+                        .buildAndExpand(result.data().id())
                         .toUri();
-        return ResponseEntity.created(location).body(response);
+        var builder = ResponseEntity.created(location);
+        if (result.replayed()) {
+            builder.header("Idempotent-Replayed", "true");
+        }
+        return builder.body(result.data());
+    }
+
+    private void validateIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new BusinessRuleException(
+                    ErrorCode.IDEMPOTENCY_KEY_MISSING,
+                    "Required header 'Idempotency-Key' is missing or blank");
+        }
     }
 
     @GetMapping("/{id}")

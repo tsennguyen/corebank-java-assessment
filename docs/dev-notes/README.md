@@ -19,4 +19,5 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **0.5** | API Correctness & Architecture Cleanup | L1-04, L1-05, G-03, NC-08 | [#13](https://github.com/tsennguyen/corebank-java-assessment/pull/13) | [0-5-api-correctness-and-cleanup.md](0-5-api-correctness-and-cleanup.md) |
 | **2.4** | Transaction Fee Policy | L1-08, L1-03 | [#14](https://github.com/tsennguyen/corebank-java-assessment/pull/14) | [2-4-transaction-fee-policy.md](2-4-transaction-fee-policy.md) |
 | **2.5** | Withdraw & Transfer with Limits | L1-07, L1-08, NC-01 | [#15](https://github.com/tsennguyen/corebank-java-assessment/pull/15) | [2-5-withdraw-and-transfer-with-limits.md](2-5-withdraw-and-transfer-with-limits.md) |
+| **2.6** | Transaction Metadata Update & Reversal | L1-06, NC-01 | [#16](https://github.com/tsennguyen/corebank-java-assessment/pull/16) | [2-6-transaction-update-and-reversal.md](2-6-transaction-update-and-reversal.md) |
 
