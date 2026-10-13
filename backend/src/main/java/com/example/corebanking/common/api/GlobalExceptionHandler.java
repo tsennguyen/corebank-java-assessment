@@ -120,6 +120,80 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(headers).body(problemDetail);
     }
 
+    /**
+     * Handles method argument type mismatch errors (e.g. invalid enum or number in query params).
+     */
+    @ExceptionHandler(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ProblemDetail> handleMethodArgumentTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+            WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        List<ValidationError> validationErrors =
+                List.of(
+                        new ValidationError(
+                                ex.getName(), "Invalid value: '" + ex.getValue() + "'"));
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.BAD_REQUEST,
+                        "Parameter '" + ex.getName() + "' has invalid format");
+        problemDetail.setTitle(ErrorCode.VALIDATION_FAILED.getDefaultTitle());
+        problemDetail.setType(URI.create(ErrorCode.VALIDATION_FAILED.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, ErrorCode.VALIDATION_FAILED.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+        problemDetail.setProperty(PROPERTY_ERRORS, validationErrors);
+
+        log.warn(
+                "Parameter type mismatch [requestId={}]: {} = {}",
+                requestId,
+                ex.getName(),
+                ex.getValue());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(problemDetail);
+    }
+
+    /** Handles validation failures on method arguments and query parameters. */
+    @Override
+    protected ResponseEntity<Object> handleHandlerMethodValidationException(
+            org.springframework.web.method.annotation.HandlerMethodValidationException ex,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        List<ValidationError> validationErrors = new ArrayList<>();
+        ex.getAllValidationResults()
+                .forEach(
+                        result -> {
+                            String paramName = result.getMethodParameter().getParameterName();
+                            result.getResolvableErrors()
+                                    .forEach(
+                                            error ->
+                                                    validationErrors.add(
+                                                            new ValidationError(
+                                                                    paramName,
+                                                                    error.getDefaultMessage())));
+                        });
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.BAD_REQUEST, "Validation failed for request parameters");
+        problemDetail.setTitle(ErrorCode.VALIDATION_FAILED.getDefaultTitle());
+        problemDetail.setType(URI.create(ErrorCode.VALIDATION_FAILED.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, ErrorCode.VALIDATION_FAILED.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+        problemDetail.setProperty(PROPERTY_ERRORS, validationErrors);
+
+        log.warn(
+                "Handler method validation failed [requestId={}]: {} error(s)",
+                requestId,
+                validationErrors.size());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(headers).body(problemDetail);
+    }
+
     /** Handles JPA optimistic locking concurrency failures. */
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ProblemDetail> handleOptimisticLockingFailure(

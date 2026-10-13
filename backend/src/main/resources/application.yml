@@ -29,6 +29,27 @@ app:
     balance-tiers:
       medium-threshold: 10000000.00
       high-threshold: 100000000.00
+  fees:
+    withdrawal:
+      - min-amount: 0.00
+        flat-fee: 2000.00
+      - min-amount: 10000000.00
+        rate-percent: 0.02
+        max-fee: 50000.00
+    transfer:
+      - min-amount: 0.00
+        flat-fee: 0.00
+      - min-amount: 500000.00
+        flat-fee: 2000.00
+      - min-amount: 10000000.00
+        rate-percent: 0.02
+        max-fee: 50000.00
+    deposit:
+      - min-amount: 0.00
+        flat-fee: 0.00
+    payment:
+      - min-amount: 0.00
+        flat-fee: 0.00
 
 springdoc:
   api-docs:
