@@ -21,6 +21,7 @@ import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
 import com.example.corebanking.transaction.api.dto.TransactionSearchCriteria;
 import com.example.corebanking.transaction.api.dto.TransferRequest;
+import com.example.corebanking.transaction.api.dto.UpdateTransactionRequest;
 import com.example.corebanking.transaction.api.dto.WithdrawalRequest;
 import com.example.corebanking.transaction.domain.FeePolicy;
 import com.example.corebanking.transaction.domain.LimitPolicy;
@@ -692,6 +693,406 @@ class TransactionServiceTest {
 
             assertThat(response.content()).hasSize(1);
             assertThat(response.totalElements()).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("updateTransactionMetadata Tests")
+    class UpdateTransactionMetadataTests {
+
+        @Test
+        @DisplayName("updateTransactionMetadata updates description and location successfully")
+        void updateTransactionMetadata_whenValid_shouldUpdateAndReturn() {
+            Transaction tx =
+                    Transaction.createDeposit(
+                            "TXN-UPD001",
+                            1L,
+                            new BigDecimal("100000.00"),
+                            new BigDecimal("100000.00"),
+                            "Old Loc",
+                            "Old Desc");
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.saveAndFlush(any(Transaction.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            UpdateTransactionRequest request = new UpdateTransactionRequest("New Desc", "New Loc");
+            TransactionResponse response =
+                    transactionService.updateTransactionMetadata(1L, request);
+
+            assertThat(response.description()).isEqualTo("New Desc");
+            assertThat(response.location()).isEqualTo("New Loc");
+            verify(transactionRepository).saveAndFlush(tx);
+        }
+
+        @Test
+        @DisplayName("updateTransactionMetadata rejects requests with immutable fields")
+        void updateTransactionMetadata_withImmutableField_shouldThrowImmutableField() {
+            UpdateTransactionRequest request =
+                    new UpdateTransactionRequest(
+                            "Desc",
+                            "Loc",
+                            new BigDecimal("5000.00"),
+                            null,
+                            null,
+                            null,
+                            null,
+                            null,
+                            null);
+
+            assertThatThrownBy(() -> transactionService.updateTransactionMetadata(1L, request))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.IMMUTABLE_FIELD));
+        }
+
+        @Test
+        @DisplayName(
+                "updateTransactionMetadata throws ResourceNotFoundException when transaction not"
+                        + " found")
+        void updateTransactionMetadata_whenNotFound_shouldThrowNotFound() {
+            when(transactionRepository.findById(999L)).thenReturn(Optional.empty());
+            UpdateTransactionRequest request = new UpdateTransactionRequest("Desc", "Loc");
+
+            assertThatThrownBy(() -> transactionService.updateTransactionMetadata(999L, request))
+                    .isInstanceOf(ResourceNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName(
+                "updateTransactionMetadata throws INVALID_STATUS_TRANSITION when transaction is"
+                        + " already REVERSED")
+        void updateTransactionMetadata_whenReversed_shouldThrowInvalidStatusTransition() {
+            Transaction tx =
+                    Transaction.createDeposit(
+                            "TXN-UPD002",
+                            1L,
+                            new BigDecimal("100000.00"),
+                            new BigDecimal("100000.00"),
+                            "Loc",
+                            "Desc");
+            tx.markReversed();
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            UpdateTransactionRequest request = new UpdateTransactionRequest("New Desc", "New Loc");
+
+            assertThatThrownBy(() -> transactionService.updateTransactionMetadata(1L, request))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION));
+        }
+    }
+
+    @Nested
+    @DisplayName("reverseTransaction Tests")
+    class ReverseTransactionTests {
+
+        @Test
+        @DisplayName(
+                "reverseTransaction throws ResourceNotFoundException when transaction does not"
+                        + " exist")
+        void reverseTransaction_whenNotFound_shouldThrowNotFound() {
+            when(transactionRepository.findById(999L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> transactionService.reverseTransaction(999L))
+                    .isInstanceOf(ResourceNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("reverseTransaction throws ALREADY_REVERSED when status is REVERSED")
+        void reverseTransaction_whenAlreadyReversed_shouldThrowAlreadyReversed() {
+            Transaction tx =
+                    Transaction.createDeposit(
+                            "TXN-REV001",
+                            1L,
+                            new BigDecimal("100000.00"),
+                            new BigDecimal("100000.00"),
+                            "Loc",
+                            "Desc");
+            tx.markReversed();
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+
+            assertThatThrownBy(() -> transactionService.reverseTransaction(1L))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.ALREADY_REVERSED));
+        }
+
+        @Test
+        @DisplayName(
+                "reverseTransaction throws ALREADY_REVERSED when reversalOfId already exists in DB")
+        void reverseTransaction_whenReversalExistsInRepo_shouldThrowAlreadyReversed() {
+            Transaction tx =
+                    Transaction.createDeposit(
+                            "TXN-REV002",
+                            1L,
+                            new BigDecimal("100000.00"),
+                            new BigDecimal("100000.00"),
+                            "Loc",
+                            "Desc");
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.existsByReversalOfId(1L)).thenReturn(true);
+
+            assertThatThrownBy(() -> transactionService.reverseTransaction(1L))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.ALREADY_REVERSED));
+        }
+
+        @Test
+        @DisplayName(
+                "reverseTransaction throws INVALID_STATUS_TRANSITION when transaction is a"
+                        + " REVERSAL")
+        void reverseTransaction_whenReversalType_shouldThrowInvalidStatusTransition() {
+            Transaction orig =
+                    Transaction.createDeposit(
+                            "TXN-REV003",
+                            1L,
+                            new BigDecimal("100000.00"),
+                            new BigDecimal("100000.00"),
+                            "Loc",
+                            "Desc");
+            Transaction reversalTx =
+                    Transaction.createDepositReversal(
+                            "TXN-REV003-R", orig, BigDecimal.ZERO, null, null);
+            when(transactionRepository.findById(2L)).thenReturn(Optional.of(reversalTx));
+
+            assertThatThrownBy(() -> transactionService.reverseTransaction(2L))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION));
+        }
+
+        @Test
+        @DisplayName(
+                "reverseTransaction for DEPOSIT debits target account and marks original REVERSED")
+        void reverseTransaction_deposit_shouldDebitTargetAndMarkReversed() {
+            Account targetAccount =
+                    new Account(
+                            "100000000001",
+                            10L,
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"),
+                            LocalDate.now());
+            targetAccount.credit(Money.of(new BigDecimal("1500000.00"))); // balance 1,500,000
+
+            Transaction orig =
+                    Transaction.createDeposit(
+                            "TXN-DEP001",
+                            1L,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("1000000.00"),
+                            "HN",
+                            "Deposit");
+
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(targetAccount));
+            when(referenceGenerator.generate()).thenReturn("TXN-REV-DEP-001");
+            when(transactionRepository.save(any(Transaction.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            TransactionResponse response = transactionService.reverseTransaction(1L);
+
+            assertThat(orig.getStatus()).isEqualTo(TransactionStatus.REVERSED);
+            assertThat(targetAccount.getBalance()).isEqualByComparingTo("500000.00");
+            assertThat(response.type()).isEqualTo(TransactionType.REVERSAL);
+            assertThat(response.amount()).isEqualByComparingTo("1000000.00");
+            assertThat(response.systemBalanceDelta()).isEqualByComparingTo("-1000000.00");
+            verify(eventPublisher).publishEvent(any(TransactionCompletedEvent.class));
+        }
+
+        @Test
+        @DisplayName(
+                "reverseTransaction for WITHDRAWAL credits source account with amount plus fee")
+        void reverseTransaction_withdrawal_shouldCreditSourceWithAmountAndFee() {
+            Account sourceAccount =
+                    new Account(
+                            "100000000001",
+                            10L,
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"),
+                            LocalDate.now());
+            sourceAccount.credit(Money.of(new BigDecimal("5000000.00")));
+            sourceAccount.debit(Money.of(new BigDecimal("1002000.00"))); // balance 3,998,000
+
+            Transaction orig =
+                    Transaction.createWithdrawal(
+                            "TXN-WTH001",
+                            1L,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("2000.00"),
+                            new BigDecimal("3998000.00"),
+                            "ATM",
+                            "Withdrawal");
+
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(sourceAccount));
+            when(referenceGenerator.generate()).thenReturn("TXN-REV-WTH-001");
+            when(transactionRepository.save(any(Transaction.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            TransactionResponse response = transactionService.reverseTransaction(1L);
+
+            assertThat(orig.getStatus()).isEqualTo(TransactionStatus.REVERSED);
+            assertThat(sourceAccount.getBalance()).isEqualByComparingTo("5000000.00"); // restored
+            assertThat(response.type()).isEqualTo(TransactionType.REVERSAL);
+            assertThat(response.systemBalanceDelta()).isEqualByComparingTo("1002000.00");
+        }
+
+        @Test
+        @DisplayName("reverseTransaction for PAYMENT credits source account with amount plus fee")
+        void reverseTransaction_payment_shouldCreditSourceWithAmountAndFee() {
+            Account sourceAccount =
+                    new Account(
+                            "100000000001",
+                            10L,
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"),
+                            LocalDate.now());
+            sourceAccount.credit(Money.of(new BigDecimal("500000.00"))); // balance 500,000
+
+            Transaction orig =
+                    Transaction.createPayment(
+                            "TXN-PAY001",
+                            1L,
+                            new BigDecimal("500000.00"),
+                            BigDecimal.ZERO,
+                            BigDecimal.ZERO,
+                            "Online",
+                            "Bill payment");
+
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(sourceAccount));
+            when(referenceGenerator.generate()).thenReturn("TXN-REV-PAY-001");
+            when(transactionRepository.save(any(Transaction.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            TransactionResponse response = transactionService.reverseTransaction(1L);
+
+            assertThat(orig.getStatus()).isEqualTo(TransactionStatus.REVERSED);
+            assertThat(sourceAccount.getBalance()).isEqualByComparingTo("1000000.00");
+            assertThat(response.type()).isEqualTo(TransactionType.REVERSAL);
+        }
+
+        @Test
+        @DisplayName(
+                "reverseTransaction for TRANSFER debits target and credits source under ascending"
+                        + " lock order")
+        void reverseTransaction_transfer_shouldDebitTargetCreditSourceWithAscendingLock() {
+            Account account1 =
+                    new Account(
+                            "100000000001",
+                            10L,
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"),
+                            LocalDate.now());
+            account1.credit(Money.of(new BigDecimal("1000000.00"))); // A has 1,000,000
+
+            Account account2 =
+                    new Account(
+                            "100000000002",
+                            20L,
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"),
+                            LocalDate.now());
+            account2.credit(Money.of(new BigDecimal("5000000.00"))); // B has 5,000,000
+
+            // Transfer was A (1L) -> B (2L), amount 3,000,000, fee 2,000
+            Transaction orig =
+                    Transaction.createTransfer(
+                            "TXN-TRF001",
+                            1L,
+                            2L,
+                            new BigDecimal("3000000.00"),
+                            new BigDecimal("2000.00"),
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("5000000.00"),
+                            "Online",
+                            "Transfer");
+
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account1));
+            when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(account2));
+            when(referenceGenerator.generate()).thenReturn("TXN-REV-TRF-001");
+            when(transactionRepository.save(any(Transaction.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            TransactionResponse response = transactionService.reverseTransaction(1L);
+
+            // Verify ascending lock order (1L then 2L)
+            InOrder inOrder = inOrder(accountRepository);
+            inOrder.verify(accountRepository).findByIdForUpdate(1L);
+            inOrder.verify(accountRepository).findByIdForUpdate(2L);
+
+            assertThat(orig.getStatus()).isEqualTo(TransactionStatus.REVERSED);
+            assertThat(account2.getBalance())
+                    .isEqualByComparingTo("2000000.00"); // B debited 3,000,000
+            assertThat(account1.getBalance())
+                    .isEqualByComparingTo("4002000.00"); // A credited 3,002,000 (amount + fee)
+            assertThat(response.type()).isEqualTo(TransactionType.REVERSAL);
+            assertThat(response.systemBalanceDelta())
+                    .isEqualByComparingTo("2000.00"); // fee refunded
+        }
+
+        @Test
+        @DisplayName(
+                "reverseTransaction throws INSUFFICIENT_BALANCE when target account has spent the"
+                        + " money")
+        void reverseTransaction_whenTargetHasInsufficientBalance_shouldThrowInsufficientBalance() {
+            Account account1 =
+                    new Account(
+                            "100000000001",
+                            10L,
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"),
+                            LocalDate.now());
+
+            Account account2 =
+                    new Account(
+                            "100000000002",
+                            20L,
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"),
+                            LocalDate.now());
+            // B has 0 balance, cannot refund 3,000,000
+
+            Transaction orig =
+                    Transaction.createTransfer(
+                            "TXN-TRF002",
+                            1L,
+                            2L,
+                            new BigDecimal("3000000.00"),
+                            new BigDecimal("2000.00"),
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("3000000.00"),
+                            "Online",
+                            "Transfer");
+
+            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account1));
+            when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(account2));
+
+            assertThatThrownBy(() -> transactionService.reverseTransaction(1L))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE));
+
+            assertThat(orig.getStatus()).isEqualTo(TransactionStatus.COMPLETED); // not modified
         }
     }
 }

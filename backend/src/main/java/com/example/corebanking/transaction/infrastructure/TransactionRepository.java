@@ -20,16 +20,22 @@ public interface TransactionRepository
 
     Optional<Transaction> findByReferenceNo(String referenceNo);
 
+    boolean existsByReversalOfId(Long reversalOfId);
+
+    Optional<Transaction> findByReversalOfId(Long reversalOfId);
+
     @Query(
             "SELECT t FROM Transaction t WHERE t.sourceAccountId = :accountId OR t.targetAccountId"
                     + " = :accountId")
     Page<Transaction> findByAccountId(@Param("accountId") Long accountId, Pageable pageable);
 
     @Query(
-            "SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t "
-                    + "WHERE t.sourceAccountId = :accountId "
-                    + "AND t.status = :status "
-                    + "AND t.createdAt >= :since")
+            "SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t WHERE t.sourceAccountId ="
+                    + " :accountId AND t.status = :status AND t.type IN"
+                    + " (com.example.corebanking.transaction.domain.TransactionType.WITHDRAWAL,"
+                    + " com.example.corebanking.transaction.domain.TransactionType.TRANSFER,"
+                    + " com.example.corebanking.transaction.domain.TransactionType.PAYMENT) AND"
+                    + " t.createdAt >= :since")
     BigDecimal sumOutgoingAmountSince(
             @Param("accountId") Long accountId,
             @Param("status") TransactionStatus status,
