@@ -11,3 +11,4 @@ spring:
     show-sql: false
   flyway:
     enabled: true
+    locations: classpath:db/migration,classpath:db/seed

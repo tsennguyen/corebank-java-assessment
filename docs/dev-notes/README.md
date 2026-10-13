@@ -21,4 +21,5 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **2.5** | Withdraw & Transfer with Limits | L1-07, L1-08, NC-01 | [#15](https://github.com/tsennguyen/corebank-java-assessment/pull/15) | [2-5-withdraw-and-transfer-with-limits.md](2-5-withdraw-and-transfer-with-limits.md) |
 | **2.6** | Transaction Metadata Update & Reversal | L1-06, NC-01 | [#16](https://github.com/tsennguyen/corebank-java-assessment/pull/16) | [2-6-transaction-update-and-reversal.md](2-6-transaction-update-and-reversal.md) |
 | **2.7** | Idempotency Key Support | NC-02, FR-9, NFR-1 | [#17](https://github.com/tsennguyen/corebank-java-assessment/pull/17) | [2-7-idempotency-key-support.md](2-7-idempotency-key-support.md) |
+| **2.8** | Concurrent Transfer Test (100 Threads) | NC-01, NC-04 | [#19](https://github.com/tsennguyen/corebank-java-assessment/pull/19) | [2-8-concurrent-transfer-test.md](2-8-concurrent-transfer-test.md) |
 
