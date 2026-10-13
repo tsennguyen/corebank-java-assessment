@@ -25,6 +25,9 @@ spring:
 app:
   business-zone: Asia/Ho_Chi_Minh
   version: "@project.version@"
+  idempotency:
+    ttl-hours: 24
+    cleanup-cron: "0 0 3 * * *"
   statistics:
     balance-tiers:
       medium-threshold: 10000000.00

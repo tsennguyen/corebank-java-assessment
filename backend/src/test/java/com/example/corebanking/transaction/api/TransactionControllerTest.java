@@ -19,6 +19,7 @@ import com.example.corebanking.common.config.ClockConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
+import com.example.corebanking.common.idempotency.IdempotencyResult;
 import com.example.corebanking.transaction.api.dto.DepositRequest;
 import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
@@ -144,10 +145,12 @@ class TransactionControllerTest {
             TransactionResponse response =
                     createDepositResponse(100L, 1L, new BigDecimal("1500000.00"));
 
-            when(transactionService.deposit(any(DepositRequest.class))).thenReturn(response);
+            when(transactionService.deposit(any(), any(DepositRequest.class)))
+                    .thenReturn(IdempotencyResult.executed(response));
 
             mockMvc.perform(
                             post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "test-key-deposit")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -171,6 +174,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "test-key-deposit")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -193,6 +197,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "test-key-deposit")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(invalidPayload))
                     .andExpect(status().isBadRequest())
@@ -209,6 +214,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "test-key-deposit")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -223,11 +229,12 @@ class TransactionControllerTest {
                     new DepositRequest(
                             999L, new BigDecimal("100000.00"), "Hà Nội", "Không tồn tại");
 
-            when(transactionService.deposit(any(DepositRequest.class)))
+            when(transactionService.deposit(any(), any(DepositRequest.class)))
                     .thenThrow(new ResourceNotFoundException("Account", 999L));
 
             mockMvc.perform(
                             post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "test-key-deposit")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isNotFound())
@@ -241,7 +248,7 @@ class TransactionControllerTest {
             DepositRequest request =
                     new DepositRequest(1L, new BigDecimal("100000.00"), "Hà Nội", "Đã đóng");
 
-            when(transactionService.deposit(any(DepositRequest.class)))
+            when(transactionService.deposit(any(), any(DepositRequest.class)))
                     .thenThrow(
                             new BusinessRuleException(
                                     ErrorCode.ACCOUNT_NOT_ACTIVE,
@@ -249,6 +256,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "test-key-deposit")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnprocessableEntity())
@@ -274,10 +282,12 @@ class TransactionControllerTest {
                     createWithdrawalResponse(
                             101L, 1L, new BigDecimal("1000000.00"), new BigDecimal("2000.00"));
 
-            when(transactionService.withdraw(any(WithdrawalRequest.class))).thenReturn(response);
+            when(transactionService.withdraw(any(), any(WithdrawalRequest.class)))
+                    .thenReturn(IdempotencyResult.executed(response));
 
             mockMvc.perform(
                             post("/api/v1/transactions/withdrawals")
+                                    .header("Idempotency-Key", "test-key-withdraw")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -299,6 +309,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/withdrawals")
+                                    .header("Idempotency-Key", "test-key-withdraw")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -312,7 +323,7 @@ class TransactionControllerTest {
             WithdrawalRequest request =
                     new WithdrawalRequest(1L, new BigDecimal("5000000.00"), "ATM", "Vượt số dư");
 
-            when(transactionService.withdraw(any(WithdrawalRequest.class)))
+            when(transactionService.withdraw(any(), any(WithdrawalRequest.class)))
                     .thenThrow(
                             new BusinessRuleException(
                                     ErrorCode.INSUFFICIENT_BALANCE,
@@ -320,6 +331,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/withdrawals")
+                                    .header("Idempotency-Key", "test-key-withdraw")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnprocessableEntity())
@@ -333,7 +345,7 @@ class TransactionControllerTest {
             WithdrawalRequest request =
                     new WithdrawalRequest(1L, new BigDecimal("60000000.00"), "ATM", "Vượt hạn mức");
 
-            when(transactionService.withdraw(any(WithdrawalRequest.class)))
+            when(transactionService.withdraw(any(), any(WithdrawalRequest.class)))
                     .thenThrow(
                             new BusinessRuleException(
                                     ErrorCode.LIMIT_EXCEEDED,
@@ -341,6 +353,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/withdrawals")
+                                    .header("Idempotency-Key", "test-key-withdraw")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnprocessableEntity())
@@ -355,7 +368,7 @@ class TransactionControllerTest {
                     new WithdrawalRequest(
                             1L, new BigDecimal("50000000.00"), "ATM", "Vượt hạn mức ngày");
 
-            when(transactionService.withdraw(any(WithdrawalRequest.class)))
+            when(transactionService.withdraw(any(), any(WithdrawalRequest.class)))
                     .thenThrow(
                             new BusinessRuleException(
                                     ErrorCode.DAILY_LIMIT_EXCEEDED,
@@ -363,6 +376,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/withdrawals")
+                                    .header("Idempotency-Key", "test-key-withdraw")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnprocessableEntity())
@@ -388,10 +402,12 @@ class TransactionControllerTest {
                     createTransferResponse(
                             102L, 1L, 2L, new BigDecimal("5000000.00"), new BigDecimal("2000.00"));
 
-            when(transactionService.transfer(any(TransferRequest.class))).thenReturn(response);
+            when(transactionService.transfer(any(), any(TransferRequest.class)))
+                    .thenReturn(IdempotencyResult.executed(response));
 
             mockMvc.perform(
                             post("/api/v1/transactions/transfers")
+                                    .header("Idempotency-Key", "test-key-transfer")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -413,7 +429,7 @@ class TransactionControllerTest {
                     new TransferRequest(
                             1L, 1L, new BigDecimal("1000000.00"), "Mobile", "Tự chuyển");
 
-            when(transactionService.transfer(any(TransferRequest.class)))
+            when(transactionService.transfer(any(), any(TransferRequest.class)))
                     .thenThrow(
                             new BusinessRuleException(
                                     ErrorCode.SAME_ACCOUNT_TRANSFER,
@@ -421,6 +437,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/transfers")
+                                    .header("Idempotency-Key", "test-key-transfer")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -437,6 +454,7 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/transfers")
+                                    .header("Idempotency-Key", "test-key-transfer")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
@@ -465,10 +483,12 @@ class TransactionControllerTest {
             TransactionResponse response =
                     createPaymentResponse(103L, 1L, new BigDecimal("500000.00"), BigDecimal.ZERO);
 
-            when(transactionService.payment(any(PaymentRequest.class))).thenReturn(response);
+            when(transactionService.payment(any(), any(PaymentRequest.class)))
+                    .thenReturn(IdempotencyResult.executed(response));
 
             mockMvc.perform(
                             post("/api/v1/transactions/payments")
+                                    .header("Idempotency-Key", "test-key-payment")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -490,11 +510,117 @@ class TransactionControllerTest {
 
             mockMvc.perform(
                             post("/api/v1/transactions/payments")
+                                    .header("Idempotency-Key", "test-key-payment")
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.status").value(400))
                     .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+    }
+
+    // ==========================================
+    // IDEMPOTENCY KEY TESTS
+    // ==========================================
+    @Nested
+    @DisplayName("Idempotency Key validation and replay tests")
+    class IdempotencyKeyTests {
+
+        @Test
+        @DisplayName("returns 400 with IDEMPOTENCY_KEY_MISSING when header is missing")
+        void deposit_whenIdempotencyKeyMissing_shouldReturn400() throws Exception {
+            DepositRequest request =
+                    new DepositRequest(
+                            1L, new BigDecimal("100000.00"), "Hà Nội", "Nạp tiền không key");
+
+            mockMvc.perform(
+                            post("/api/v1/transactions/deposits")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_MISSING"))
+                    .andExpect(
+                            jsonPath("$.detail")
+                                    .value(
+                                            "Required header 'Idempotency-Key' is missing or"
+                                                    + " blank"));
+        }
+
+        @Test
+        @DisplayName("returns 400 with IDEMPOTENCY_KEY_MISSING when header is blank")
+        void withdraw_whenIdempotencyKeyBlank_shouldReturn400() throws Exception {
+            WithdrawalRequest request =
+                    new WithdrawalRequest(
+                            1L, new BigDecimal("100000.00"), "ATM", "Rút tiền key trắng");
+
+            mockMvc.perform(
+                            post("/api/v1/transactions/withdrawals")
+                                    .header("Idempotency-Key", "   ")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_MISSING"))
+                    .andExpect(
+                            jsonPath("$.detail")
+                                    .value(
+                                            "Required header 'Idempotency-Key' is missing or"
+                                                    + " blank"));
+        }
+
+        @Test
+        @DisplayName("returns 201 with Idempotent-Replayed: true when transaction was replayed")
+        void transfer_whenReplayed_shouldReturn201WithReplayedHeader() throws Exception {
+            TransferRequest request =
+                    new TransferRequest(
+                            1L, 2L, new BigDecimal("5000000.00"), "Mobile", "Chuyển tiền");
+            TransactionResponse response =
+                    createTransferResponse(
+                            102L, 1L, 2L, new BigDecimal("5000000.00"), new BigDecimal("2000.00"));
+
+            when(transactionService.transfer(any(), any(TransferRequest.class)))
+                    .thenReturn(IdempotencyResult.replayed(response));
+
+            mockMvc.perform(
+                            post("/api/v1/transactions/transfers")
+                                    .header("Idempotency-Key", "test-key-replay")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isCreated())
+                    .andExpect(header().string("Idempotent-Replayed", "true"))
+                    .andExpect(jsonPath("$.id").value(102))
+                    .andExpect(jsonPath("$.amount").value(5000000.00));
+        }
+
+        @Test
+        @DisplayName("returns 422 IDEMPOTENCY_KEY_REUSED when key is reused with different payload")
+        void payment_whenKeyReusedWithDifferentPayload_shouldReturn422() throws Exception {
+            PaymentRequest request =
+                    new PaymentRequest(
+                            1L, new BigDecimal("500000.00"), "Online", "Thanh toán", "EVN");
+
+            when(transactionService.payment(any(), any(PaymentRequest.class)))
+                    .thenThrow(
+                            new BusinessRuleException(
+                                    ErrorCode.IDEMPOTENCY_KEY_REUSED,
+                                    "Idempotency key 'test-reused' has already been used with a"
+                                            + " different request payload"));
+
+            mockMvc.perform(
+                            post("/api/v1/transactions/payments")
+                                    .header("Idempotency-Key", "test-reused")
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.status").value(422))
+                    .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"))
+                    .andExpect(
+                            jsonPath("$.detail")
+                                    .value(
+                                            containsString(
+                                                    "has already been used with a different"
+                                                            + " request payload")));
         }
     }
 

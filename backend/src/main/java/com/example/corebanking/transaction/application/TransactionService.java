@@ -7,6 +7,8 @@ import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.Money;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
+import com.example.corebanking.common.idempotency.IdempotencyResult;
+import com.example.corebanking.common.idempotency.IdempotencyService;
 import com.example.corebanking.transaction.api.dto.DepositRequest;
 import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
@@ -59,6 +61,7 @@ public class TransactionService {
     private final LimitPolicy limitPolicy;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
+    private final IdempotencyService idempotencyService;
 
     public TransactionService(
             AccountRepository accountRepository,
@@ -68,6 +71,26 @@ public class TransactionService {
             LimitPolicy limitPolicy,
             Clock clock,
             ApplicationEventPublisher eventPublisher) {
+        this(
+                accountRepository,
+                transactionRepository,
+                referenceGenerator,
+                feePolicy,
+                limitPolicy,
+                clock,
+                eventPublisher,
+                null);
+    }
+
+    public TransactionService(
+            AccountRepository accountRepository,
+            TransactionRepository transactionRepository,
+            TransactionReferenceGenerator referenceGenerator,
+            FeePolicy feePolicy,
+            LimitPolicy limitPolicy,
+            Clock clock,
+            ApplicationEventPublisher eventPublisher,
+            IdempotencyService idempotencyService) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.referenceGenerator = referenceGenerator;
@@ -75,6 +98,30 @@ public class TransactionService {
         this.limitPolicy = limitPolicy;
         this.clock = clock;
         this.eventPublisher = eventPublisher;
+        this.idempotencyService = idempotencyService;
+    }
+
+    /**
+     * Executes an idempotent atomic cash deposit into an active account.
+     *
+     * @param idempotencyKey unique key supplied by client
+     * @param request deposit details
+     * @return idempotency result wrapping transaction response and replay flag
+     */
+    @Transactional
+    public IdempotencyResult<TransactionResponse> deposit(
+            String idempotencyKey, DepositRequest request) {
+        if (idempotencyService != null) {
+            return idempotencyService.execute(
+                    idempotencyKey,
+                    "DEFAULT",
+                    "POST",
+                    "/api/v1/transactions/deposits",
+                    request,
+                    TransactionResponse.class,
+                    () -> executeDeposit(request));
+        }
+        return IdempotencyResult.executed(executeDeposit(request));
     }
 
     /**
@@ -85,6 +132,10 @@ public class TransactionService {
      */
     @Transactional
     public TransactionResponse deposit(DepositRequest request) {
+        return executeDeposit(request);
+    }
+
+    private TransactionResponse executeDeposit(DepositRequest request) {
         Account account =
                 accountRepository
                         .findByIdForUpdate(request.accountId())
@@ -130,6 +181,29 @@ public class TransactionService {
     }
 
     /**
+     * Executes an idempotent atomic cash withdrawal with limit validation and fee deduction.
+     *
+     * @param idempotencyKey unique key supplied by client
+     * @param request withdrawal details
+     * @return idempotency result wrapping transaction response and replay flag
+     */
+    @Transactional
+    public IdempotencyResult<TransactionResponse> withdraw(
+            String idempotencyKey, WithdrawalRequest request) {
+        if (idempotencyService != null) {
+            return idempotencyService.execute(
+                    idempotencyKey,
+                    "DEFAULT",
+                    "POST",
+                    "/api/v1/transactions/withdrawals",
+                    request,
+                    TransactionResponse.class,
+                    () -> executeWithdraw(request));
+        }
+        return IdempotencyResult.executed(executeWithdraw(request));
+    }
+
+    /**
      * Executes an atomic cash withdrawal with limit validation and fee deduction under pessimistic
      * write lock.
      *
@@ -138,6 +212,10 @@ public class TransactionService {
      */
     @Transactional
     public TransactionResponse withdraw(WithdrawalRequest request) {
+        return executeWithdraw(request);
+    }
+
+    private TransactionResponse executeWithdraw(WithdrawalRequest request) {
         Account account =
                 accountRepository
                         .findByIdForUpdate(request.accountId())
@@ -193,6 +271,29 @@ public class TransactionService {
     }
 
     /**
+     * Executes an idempotent atomic fund transfer between two distinct accounts.
+     *
+     * @param idempotencyKey unique key supplied by client
+     * @param request transfer details
+     * @return idempotency result wrapping transaction response and replay flag
+     */
+    @Transactional
+    public IdempotencyResult<TransactionResponse> transfer(
+            String idempotencyKey, TransferRequest request) {
+        if (idempotencyService != null) {
+            return idempotencyService.execute(
+                    idempotencyKey,
+                    "DEFAULT",
+                    "POST",
+                    "/api/v1/transactions/transfers",
+                    request,
+                    TransactionResponse.class,
+                    () -> executeTransfer(request));
+        }
+        return IdempotencyResult.executed(executeTransfer(request));
+    }
+
+    /**
      * Executes an atomic fund transfer between two distinct accounts under ascending ID pessimistic
      * write locks to prevent deadlocks.
      *
@@ -201,6 +302,10 @@ public class TransactionService {
      */
     @Transactional
     public TransactionResponse transfer(TransferRequest request) {
+        return executeTransfer(request);
+    }
+
+    private TransactionResponse executeTransfer(TransferRequest request) {
         if (request.sourceAccountId().equals(request.targetAccountId())) {
             throw new BusinessRuleException(
                     ErrorCode.SAME_ACCOUNT_TRANSFER,
@@ -273,6 +378,29 @@ public class TransactionService {
     }
 
     /**
+     * Executes an idempotent outbound payment with limit validation and fee deduction.
+     *
+     * @param idempotencyKey unique key supplied by client
+     * @param request payment details
+     * @return idempotency result wrapping transaction response and replay flag
+     */
+    @Transactional
+    public IdempotencyResult<TransactionResponse> payment(
+            String idempotencyKey, PaymentRequest request) {
+        if (idempotencyService != null) {
+            return idempotencyService.execute(
+                    idempotencyKey,
+                    "DEFAULT",
+                    "POST",
+                    "/api/v1/transactions/payments",
+                    request,
+                    TransactionResponse.class,
+                    () -> executePayment(request));
+        }
+        return IdempotencyResult.executed(executePayment(request));
+    }
+
+    /**
      * Executes an outbound payment with limit validation and fee deduction.
      *
      * @param request payment details
@@ -280,6 +408,10 @@ public class TransactionService {
      */
     @Transactional
     public TransactionResponse payment(PaymentRequest request) {
+        return executePayment(request);
+    }
+
+    private TransactionResponse executePayment(PaymentRequest request) {
         Account account =
                 accountRepository
                         .findByIdForUpdate(request.sourceAccountId())
