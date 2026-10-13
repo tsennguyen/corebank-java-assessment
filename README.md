@@ -1,7 +1,7 @@
 # Core Banking System - REST API Service
 
 [![Backend CI](https://github.com/tsennguyen/corebank-java-assessment/actions/workflows/ci-backend.yml/badge.svg?branch=dev)](https://github.com/tsennguyen/corebank-java-assessment/actions/workflows/ci-backend.yml)
-[![Container Smoke Test](https://github.com/tsennguyen/corebank-java-assessment/actions/workflows/cd.yml/badge.svg?branch=dev)](https://github.com/tsennguyen/corebank-java-assessment/actions/workflows/cd.yml)
+[![Container Smoke Test](https://github.com/tsennguyen/corebank-java-assessment/actions/workflows/cd.yml/badge.svg)](https://github.com/tsennguyen/corebank-java-assessment/actions/workflows/cd.yml)
 ![Java 21](https://img.shields.io/badge/Java-21_LTS-orange)
 ![Spring Boot 3.5.16](https://img.shields.io/badge/Spring_Boot-3.5.16-brightgreen)
 ![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-blue)
@@ -19,7 +19,7 @@ Hệ thống quản lý tài khoản ngân hàng và giao dịch tài chính (Co
 ## 2. Công nghệ sử dụng
 - **Ngôn ngữ & Nền tảng:** Java 21 LTS (Virtual Threads), Spring Boot 3.5.16 (Web, Data JPA, JDBC Client, Validation, Actuator)
 - **Cơ sở dữ liệu & Quản lý Schema:** PostgreSQL 17, Flyway Migration (`V1`–`V6` + repeatable demo seed `R__demo_seed.sql`)
-- **Tài liệu API:** springdoc-openapi 2.8.6 (OpenAPI 3 / Swagger UI tại `/swagger-ui.html`)
+- **Tài liệu API:** springdoc-openapi 2.8.5 (OpenAPI 3 / Swagger UI tại `/swagger-ui.html`)
 - **Kiểm thử & Chất lượng:** JUnit 5, Mockito, Testcontainers (PostgreSQL 17), JaCoCo (Coverage ≥ 80% trên CI), Spotless (AOSP), Checkstyle, Docker Compose
 
 ## 3. Cấu trúc kiến trúc (Modular Monolith)
