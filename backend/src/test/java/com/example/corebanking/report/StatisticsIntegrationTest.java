@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.example.corebanking.account.domain.Account;
 import com.example.corebanking.account.domain.BalanceTier;
+import com.example.corebanking.account.infrastructure.AccountNumberGenerator;
 import com.example.corebanking.account.infrastructure.AccountRepository;
 import com.example.corebanking.customer.domain.Customer;
 import com.example.corebanking.customer.infrastructure.CustomerRepository;
@@ -15,6 +16,7 @@ import com.example.corebanking.report.api.dto.LocationStatisticResponse;
 import com.example.corebanking.report.application.StatisticsService;
 import com.example.corebanking.support.IntegrationTestBase;
 import com.example.corebanking.transaction.api.dto.DepositRequest;
+import com.example.corebanking.transaction.api.dto.PaymentRequest;
 import com.example.corebanking.transaction.api.dto.TransferRequest;
 import com.example.corebanking.transaction.application.TransactionService;
 import java.math.BigDecimal;
@@ -110,7 +112,7 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
         customerRepository.save(cDeleted);
 
         // 2. Create 1 LOW account (5M), 1 MEDIUM account (25M), 1 HIGH account (150M), and 1
-        // CLOSED account (0M)
+        // account that performs transactions and is subsequently CLOSED (0M)
         Account lowAcc =
                 accountRepository.save(
                         new Account(
@@ -136,16 +138,34 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
                                 new BigDecimal("500000000.00"),
                                 LocalDate.now()));
         Account closedAcc =
-                new Account(
-                        "100999999204",
-                        c1.getId(),
-                        new BigDecimal("50000000.00"),
-                        new BigDecimal("200000000.00"),
-                        LocalDate.now());
-        closedAcc.close(Instant.now());
-        accountRepository.save(closedAcc);
+                accountRepository.save(
+                        new Account(
+                                "100999999204",
+                                c1.getId(),
+                                new BigDecimal("50000000.00"),
+                                new BigDecimal("200000000.00"),
+                                LocalDate.now()));
 
-        // Execute transactions:
+        // Execute historical transactions on closedAcc before closing it:
+        // Deposit 2M and Pay 2M (0 fee) so balance returns to 0, then close it
+        transactionService.deposit(
+                new DepositRequest(
+                        closedAcc.getId(),
+                        new BigDecimal("2000000.00"),
+                        "Nha Trang",
+                        "Deposit before close"));
+        transactionService.payment(
+                new PaymentRequest(
+                        closedAcc.getId(),
+                        new BigDecimal("2000000.00"),
+                        "Nha Trang",
+                        "Drain before close",
+                        "Utility Provider"));
+        Account reloadedClosedAcc = accountRepository.findById(closedAcc.getId()).orElseThrow();
+        reloadedClosedAcc.close(Instant.now());
+        accountRepository.saveAndFlush(reloadedClosedAcc);
+
+        // Execute transactions on active accounts:
         // - Deposit 5M into lowAcc (1 tx for LOW)
         // - Deposit 25M into medAcc (1 tx for MEDIUM)
         // - Deposit 155M into highAcc (1 tx for HIGH)
@@ -175,10 +195,10 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
                         "Transfer HIGH to MEDIUM"));
 
         // Verify balance tier deltas:
-        // LOW: +1 account, +1 transaction
+        // LOW: +1 account, +1 transaction (closedAcc and its 2 historical transactions are
+        // excluded!)
         // MEDIUM: +1 account, +2 transactions
         // HIGH: +1 account, +2 transactions
-        // CLOSED account is excluded!
         Map<BalanceTier, BalanceTierStatisticResponse> afterTiers =
                 statisticsService.getBalanceTierStatistics().stream()
                         .collect(
@@ -240,28 +260,68 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
     @Test
     @Transactional
     @DisplayName(
-            "R__demo_seed.sql executes idempotently twice on PostgreSQL 17 and populates synthetic"
-                    + " data across all 3 tiers (E-02, NFR-11)")
+            "R__demo_seed.sql executes idempotently twice on PostgreSQL 17, passes Luhn check digit"
+                    + " and ledger invariants, and populates all 3 tiers (E-02, NFR-11)")
     void demoSeedScript_shouldExecuteIdempotentlyTwiceAndPopulateAllTiers() throws Exception {
         ClassPathResource resource = new ClassPathResource("db/seed/R__demo_seed.sql");
         String sql = resource.getContentAsString(StandardCharsets.UTF_8);
 
-        // Execute R__demo_seed.sql twice to verify ON CONFLICT DO NOTHING idempotency
+        // Execute R__demo_seed.sql twice to verify ON CONFLICT DO NOTHING and setval idempotency
         jdbcClient.sql(sql).update();
         jdbcClient.sql(sql).update();
 
+        // 1. Verify all 12 seeded account numbers pass Luhn check digit validation
+        List<String> seededAccountNumbers =
+                jdbcClient
+                        .sql(
+                                "SELECT account_number FROM core.account WHERE account_number LIKE"
+                                        + " '1008%' ORDER BY account_number")
+                        .query(String.class)
+                        .list();
+        assertThat(seededAccountNumbers).hasSize(12);
+        for (String accNum : seededAccountNumbers) {
+            String payload = accNum.substring(0, 11);
+            int actualCheckDigit = accNum.charAt(11) - '0';
+            assertThat(actualCheckDigit)
+                    .as("Luhn check digit for seeded account %s", accNum)
+                    .isEqualTo(AccountNumberGenerator.calculateLuhnCheckDigit(payload));
+        }
+
+        // 2. Verify ledger invariant: sum of seeded account balances == sum of seeded transaction
+        // system_balance_delta
+        BigDecimal totalSeededBalance =
+                jdbcClient
+                        .sql(
+                                "SELECT COALESCE(SUM(balance), 0) FROM core.account WHERE"
+                                        + " account_number LIKE '1008%'")
+                        .query(BigDecimal.class)
+                        .single();
+        BigDecimal totalSeededDelta =
+                jdbcClient
+                        .sql(
+                                "SELECT COALESCE(SUM(system_balance_delta), 0) FROM"
+                                        + " core.transaction WHERE reference_no LIKE 'TXN-SEED-%'")
+                        .query(BigDecimal.class)
+                        .single();
+        assertThat(totalSeededBalance).isEqualByComparingTo(totalSeededDelta);
+
+        // 3. Verify all 3 balance tiers are populated
         List<BalanceTierStatisticResponse> tiers = statisticsService.getBalanceTierStatistics();
         assertThat(tiers).hasSize(3);
         assertThat(tiers.get(0).accountCount()).isGreaterThanOrEqualTo(4L);
         assertThat(tiers.get(1).accountCount()).isGreaterThanOrEqualTo(4L);
         assertThat(tiers.get(2).accountCount()).isGreaterThanOrEqualTo(4L);
 
+        // 4. Verify descending order of customer counts and alphabetical tie-break on location
         List<LocationStatisticResponse> locations = statisticsService.getCustomersByLocation();
         assertThat(locations).isNotEmpty();
-        // Verify descending order of customer counts
         for (int i = 0; i < locations.size() - 1; i++) {
-            assertThat(locations.get(i).customerCount())
-                    .isGreaterThanOrEqualTo(locations.get(i + 1).customerCount());
+            LocationStatisticResponse current = locations.get(i);
+            LocationStatisticResponse next = locations.get(i + 1);
+            assertThat(current.customerCount()).isGreaterThanOrEqualTo(next.customerCount());
+            if (current.customerCount() == next.customerCount()) {
+                assertThat(current.location()).isLessThanOrEqualTo(next.location());
+            }
         }
     }
 }

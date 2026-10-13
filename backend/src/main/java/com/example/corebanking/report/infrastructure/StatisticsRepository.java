@@ -67,7 +67,7 @@ public class StatisticsRepository {
                    COUNT(*) AS customer_count
             FROM core.customer c
             WHERE c.deleted_at IS NULL
-            GROUP BY c.location
+            GROUP BY COALESCE(c.location, 'UNKNOWN')
             ORDER BY customer_count DESC, location ASC
             """;
 
