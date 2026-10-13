@@ -126,7 +126,7 @@ public class AccountController {
                     @RequestParam(required = false)
                     String accountNumber,
             @ParameterObject
-                    @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.ASC)
+                    @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC)
                     Pageable pageable) {
         return ResponseEntity.ok(
                 accountService.searchAccounts(customerId, status, accountNumber, pageable));

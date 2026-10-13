@@ -124,7 +124,7 @@ public class CustomerController {
                     @RequestParam(required = false)
                     String location,
             @ParameterObject
-                    @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.ASC)
+                    @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC)
                     Pageable pageable) {
         return ResponseEntity.ok(customerService.searchCustomers(name, location, pageable));
     }

@@ -11,11 +11,11 @@ import com.example.corebanking.account.api.dto.AccountResponse;
 import com.example.corebanking.account.api.dto.CreateAccountRequest;
 import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.domain.Account;
-import com.example.corebanking.account.domain.AccountNumberGenerator;
 import com.example.corebanking.account.domain.AccountStatus;
 import com.example.corebanking.account.domain.BalanceTier;
 import com.example.corebanking.account.domain.BalanceTierPolicy;
 import com.example.corebanking.account.domain.BalanceTierProperties;
+import com.example.corebanking.account.infrastructure.AccountNumberGenerator;
 import com.example.corebanking.account.infrastructure.AccountRepository;
 import com.example.corebanking.common.api.PageResponse;
 import com.example.corebanking.common.domain.BaseEntity;
@@ -284,7 +284,7 @@ class AccountServiceTest {
         setCreatedAt(account, clock.instant());
 
         when(accountRepository.findById(10L)).thenReturn(Optional.of(account));
-        when(accountRepository.save(any(Account.class))).thenAnswer(i -> i.getArgument(0));
+        when(accountRepository.saveAndFlush(any(Account.class))).thenAnswer(i -> i.getArgument(0));
 
         UpdateAccountLimitsRequest updateRequest =
                 new UpdateAccountLimitsRequest(
@@ -294,7 +294,7 @@ class AccountServiceTest {
 
         assertThat(response.transactionLimit()).isEqualByComparingTo("20000000.00");
         assertThat(response.dailyLimit()).isEqualByComparingTo("80000000.00");
-        verify(accountRepository).save(account);
+        verify(accountRepository).saveAndFlush(account);
     }
 
     @Test

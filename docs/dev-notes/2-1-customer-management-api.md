@@ -10,7 +10,10 @@
   - Áp dụng whitelist sắp xếp và giới hạn kích thước phân trang (1 đến 100) để chống tấn công DoS và SQL Injection.
 - **Vì sao làm vậy:** Quản lý thông tin khách hàng là nền tảng cốt lõi của ngân hàng. Sử dụng xóa mềm để bảo toàn tính toàn vẹn dữ liệu cho các báo cáo kiểm toán và giao dịch sau này.
 - **Phương án khác đã cân nhắc:** Xóa cứng (hard-delete) bản ghi trong DB; lý do không chọn: vi phạm tính toàn vẹn lịch sử giao dịch và chuẩn kiểm toán tài chính.
-- **Bẫy cần nhớ:** CCCD gửi lên bắt buộc bắt đầu bằng `000` (giả lập), không chấp nhận CCCD người thật.
+- **Bẫy cần nhớ:**
+  - CCCD gửi lên bắt buộc bắt đầu bằng `000` (giả lập), không chấp nhận CCCD người thật.
+  - Cập nhật thông tin dùng `saveAndFlush` để ép Hibernate đẩy SQL UPDATE và tăng version trong DB ngay trước khi map sang DTO, tránh trả về version cũ cho client.
+  - Tìm kiếm khách hàng theo tên hiện dùng `LIKE %...%`; đánh đổi là quét toàn bảng, hướng mở rộng cho dữ liệu lớn là tích hợp `pg_trgm` và GIN index.
 - **Quyết định về CCCD:** `national_id` là `UNIQUE` trên toàn bảng, kể cả khách đã xóa mềm. Lý do: giữ vết định danh (KYC) không bị trùng lặp; một người quay lại thì khôi phục hồ sơ cũ thay vì tạo hồ sơ mới. Đánh đổi: không tạo được hồ sơ mới cùng CCCD sau khi xóa.
 - **Cách chạy/test:**
   - `./mvnw test -Dtest=CustomerControllerTest,CustomerServiceTest,CustomerTest`

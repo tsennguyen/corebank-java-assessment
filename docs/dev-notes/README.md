@@ -14,4 +14,6 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **2.1** | Customer Management API | L1-01, L1-04, L2-04 | [#8](https://github.com/tsennguyen/corebank-java-assessment/pull/8) | [2-1-customer-management-api.md](2-1-customer-management-api.md) |
 | **2.2** | Account Management API | L1-01, L1-02, L1-05, L2-04 | [#9](https://github.com/tsennguyen/corebank-java-assessment/pull/9) | [2-2-account-management-api.md](2-2-account-management-api.md) |
 | **2.3** | Deposit & Transaction Query | L1-01, L1-03, L1-06 | [#10](https://github.com/tsennguyen/corebank-java-assessment/pull/10) | [2-3-deposit-and-transaction-query.md](2-3-deposit-and-transaction-query.md) |
-| **0.2** | CI on every PR & config hygiene | NC-05, G-03 | (PR hiện tại) | [0-2-ci-paths-and-config-hygiene.md](0-2-ci-paths-and-config-hygiene.md) |
+| **0.2** | CI on every PR & config hygiene | NC-05, G-03 | [#11](https://github.com/tsennguyen/corebank-java-assessment/pull/11) | [0-2-ci-paths-and-config-hygiene.md](0-2-ci-paths-and-config-hygiene.md) |
+| **0.3** | Honest & Enterprise Public README | NC-09, E-02 | [#12](https://github.com/tsennguyen/corebank-java-assessment/pull/12) | [0-3-honest-readme.md](0-3-honest-readme.md) |
+| **0.5** | API Correctness & Architecture Cleanup | L1-04, L1-05, G-03, NC-08 | (PR hiện tại) | [0-5-api-correctness-and-cleanup.md](0-5-api-correctness-and-cleanup.md) |

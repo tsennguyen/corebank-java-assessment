@@ -9,6 +9,10 @@
   - Xây dựng `AccountController` và `AccountService`: mở tài khoản (201), xem chi tiết (200), tìm kiếm phân trang (200), điều chỉnh hạn mức (200), đóng tài khoản (204).
 - **Vì sao làm vậy:** Số tài khoản theo chuẩn Luhn giúp phát hiện ngay sai sót khi người dùng nhập nhầm số tài khoản. Ràng buộc đóng tài khoản chỉ cho phép khi số dư bằng 0 bảo vệ tài sản của khách hàng.
 - **Phương án khác đã cân nhắc:** Sinh số tài khoản ngẫu nhiên hoàn toàn (UUID); lý do không chọn: không thân thiện với người dùng và không tuân theo thông lệ ngân hàng.
-- **Bẫy cần nhớ:** Nếu tài khoản còn số dư (> 0), thao tác đóng tài khoản bị từ chối với HTTP 409 `ACCOUNT_HAS_BALANCE`.
+- **Bẫy cần nhớ:**
+  - Nếu tài khoản còn số dư (> 0), thao tác đóng tài khoản bị từ chối với HTTP 409 `ACCOUNT_HAS_BALANCE`.
+  - Cập nhật hạn mức tài khoản `CLOSED` bị từ chối với HTTP 409 `INVALID_STATUS_TRANSITION` (thay vì lỗi 500).
+  - Tra cứu số tài khoản dùng so khớp chính xác `EQUAL` thay vì `LIKE` để tận dụng B-tree UNIQUE index.
+  - `AccountNumberGenerator` sử dụng sequence database nên đặt tại tầng hạ tầng `account.infrastructure`.
 - **Cách chạy/test:**
-  - `./mvnw test -Dtest=AccountControllerTest,AccountServiceTest,AccountTest,AccountNumberGeneratorTest,BalanceTierPolicyTest`
+  - `./mvnw test -Dtest=AccountControllerTest,AccountServiceTest,AccountTest,AccountNumberGeneratorTest,BalanceTierPolicyTest,AccountSpecificationsTest`

@@ -1,4 +1,4 @@
-package com.example.corebanking.account.domain;
+package com.example.corebanking.account.infrastructure;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -57,35 +57,5 @@ public class AccountNumberGenerator {
         }
         int mod = sum % 10;
         return (mod == 0) ? 0 : 10 - mod;
-    }
-
-    /**
-     * Verifies if a given 12-digit string satisfies the Luhn algorithm.
-     *
-     * @param number 12-digit account number
-     * @return true if valid Luhn number, false otherwise
-     */
-    public static boolean isValidLuhn(String number) {
-        if (number == null || number.length() != 12) {
-            return false;
-        }
-        int sum = 0;
-        boolean doubleDigit = false;
-        for (int i = number.length() - 1; i >= 0; i--) {
-            char c = number.charAt(i);
-            if (!Character.isDigit(c)) {
-                return false;
-            }
-            int digit = c - '0';
-            if (doubleDigit) {
-                digit *= 2;
-                if (digit > 9) {
-                    digit -= 9;
-                }
-            }
-            sum += digit;
-            doubleDigit = !doubleDigit;
-        }
-        return sum % 10 == 0;
     }
 }

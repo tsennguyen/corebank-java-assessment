@@ -69,7 +69,7 @@ public class TransactionController {
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "422",
-                description = "Tài khoản không ở trạng thái hoạt động (CLOSED hoặc FROZEN)",
+                description = "Tài khoản không ở trạng thái hoạt động (CLOSED hoặc LOCKED)",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<TransactionResponse> deposit(@Valid @RequestBody DepositRequest request) {

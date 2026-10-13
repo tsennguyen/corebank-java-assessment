@@ -93,6 +93,31 @@ class AccountTest {
     }
 
     @Test
+    @DisplayName("updateLimits throws INVALID_STATUS_TRANSITION (409) when account is closed")
+    void updateLimits_shouldThrowWhenAccountIsClosed() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        account.close(Instant.now());
+
+        assertThatThrownBy(
+                        () ->
+                                account.updateLimits(
+                                        new BigDecimal("60000000.00"),
+                                        new BigDecimal("120000000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION))
+                .hasMessageContaining("Cannot update limits on a closed account");
+    }
+
+    @Test
     @DisplayName("close() succeeds when balance is zero and transitions to CLOSED")
     void close_shouldSucceedWhenBalanceZero() {
         Account account =

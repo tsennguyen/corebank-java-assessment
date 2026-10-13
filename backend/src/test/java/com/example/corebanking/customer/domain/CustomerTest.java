@@ -119,7 +119,9 @@ class CustomerTest {
     }
 
     @Test
-    @DisplayName("update() throws IllegalStateException when called on soft-deleted customer")
+    @DisplayName(
+            "update() throws BusinessRuleException (INVALID_STATUS_TRANSITION) when called on"
+                    + " soft-deleted customer")
     void update_shouldRejectModificationWhenDeleted() {
         Customer customer =
                 new Customer(
@@ -143,7 +145,17 @@ class CustomerTest {
                                         "Address",
                                         "Location",
                                         null))
-                .isInstanceOf(IllegalStateException.class)
+                .isInstanceOf(com.example.corebanking.common.domain.BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(
+                                                ((com.example.corebanking.common.domain
+                                                                        .BusinessRuleException)
+                                                                ex)
+                                                        .getErrorCode())
+                                        .isEqualTo(
+                                                com.example.corebanking.common.domain.ErrorCode
+                                                        .INVALID_STATUS_TRANSITION))
                 .hasMessageContaining("Cannot update a deleted customer");
     }
 }

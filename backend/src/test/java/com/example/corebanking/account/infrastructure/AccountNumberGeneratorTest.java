@@ -1,4 +1,4 @@
-package com.example.corebanking.account.domain;
+package com.example.corebanking.account.infrastructure;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -26,29 +26,19 @@ class AccountNumberGeneratorTest {
         String accountNumber = generator.nextAccountNumber();
 
         assertThat(accountNumber).hasSize(12);
-        assertThat(accountNumber).startsWith("10000000001");
-        assertThat(AccountNumberGenerator.isValidLuhn(accountNumber)).isTrue();
+        assertThat(accountNumber).isEqualTo("100000000016");
     }
 
     @Test
-    @DisplayName("calculateLuhnCheckDigit computes accurate check digit")
+    @DisplayName("calculateLuhnCheckDigit computes accurate mod-10 check digit")
     void calculateLuhnCheckDigit_shouldProduceAccurateDigit() {
-        // Test with known payload "10000000001"
+        // Test with known payload "10000000001" -> check digit is 6
         String payload = "10000000001";
         int checkDigit = AccountNumberGenerator.calculateLuhnCheckDigit(payload);
-        String fullNumber = payload + checkDigit;
+        assertThat(checkDigit).isEqualTo(6);
 
-        assertThat(AccountNumberGenerator.isValidLuhn(fullNumber)).isTrue();
-    }
-
-    @Test
-    @DisplayName("isValidLuhn rejects corrupted or wrong length account numbers")
-    void isValidLuhn_shouldRejectInvalidInputs() {
-        assertThat(AccountNumberGenerator.isValidLuhn(null)).isFalse();
-        assertThat(AccountNumberGenerator.isValidLuhn("")).isFalse();
-        assertThat(AccountNumberGenerator.isValidLuhn("100")).isFalse();
-        assertThat(AccountNumberGenerator.isValidLuhn("100000000019"))
-                .isFalse(); // Incorrect check digit
-        assertThat(AccountNumberGenerator.isValidLuhn("10000000001X")).isFalse(); // Non-digit
+        // Test with known payload "10000000002" -> i=10 is 2*2=4, i=0 is 1*2=2 -> sum=6 ->
+        // checkDigit=4
+        assertThat(AccountNumberGenerator.calculateLuhnCheckDigit("10000000002")).isEqualTo(4);
     }
 }
