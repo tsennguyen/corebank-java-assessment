@@ -23,4 +23,4 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **2.7** | Idempotency Key Support | NC-02, FR-9, NFR-1 | [#17](https://github.com/tsennguyen/corebank-java-assessment/pull/17) | [2-7-idempotency-key-support.md](2-7-idempotency-key-support.md) |
 | **2.8** | Concurrent Transfer Test (100 Threads) | NC-01, NC-04 | [#19](https://github.com/tsennguyen/corebank-java-assessment/pull/19) | [2-8-concurrent-transfer-test.md](2-8-concurrent-transfer-test.md) |
 | **2.9** | Balance Tier & Location Statistics + Demo Seed | L1-09, L1-10, G-05, E-02 | [#20](https://github.com/tsennguyen/corebank-java-assessment/pull/20) | [2-9-balance-tier-and-location-statistics.md](2-9-balance-tier-and-location-statistics.md) |
-
+| **2.10** | Container Image, Docker Compose & Level 1 Release | NC-06, NC-10, FR-24, NFR-10 | [#21](https://github.com/tsennguyen/corebank-java-assessment/pull/21) | [2-10-container-image-and-level-1-release.md](2-10-container-image-and-level-1-release.md) |
