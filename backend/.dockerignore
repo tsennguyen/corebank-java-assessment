@@ -1,0 +1,10 @@
+target/
+!target/.gitkeep
+.mvn/timing.properties
+.git/
+.gitignore
+*.md
+*.iml
+.idea/
+.vscode/
+.DS_Store
