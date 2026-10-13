@@ -275,7 +275,7 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
                 jdbcClient
                         .sql(
                                 "SELECT account_number FROM core.account WHERE account_number LIKE"
-                                        + " '1008%' ORDER BY account_number")
+                                        + " '100800000%' ORDER BY account_number")
                         .query(String.class)
                         .list();
         assertThat(seededAccountNumbers).hasSize(12);
@@ -293,7 +293,7 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
                 jdbcClient
                         .sql(
                                 "SELECT COALESCE(SUM(balance), 0) FROM core.account WHERE"
-                                        + " account_number LIKE '1008%'")
+                                        + " account_number LIKE '100800000%'")
                         .query(BigDecimal.class)
                         .single();
         BigDecimal totalSeededDelta =
