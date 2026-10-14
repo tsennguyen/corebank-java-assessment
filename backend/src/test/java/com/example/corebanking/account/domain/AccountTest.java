@@ -59,13 +59,27 @@ class AccountTest {
                                 assertThat(((BusinessRuleException) ex).getErrorCode())
                                         .isEqualTo(ErrorCode.VALIDATION_FAILED));
 
-        // transactionLimit <= 0
+        // transactionLimit <= 0 (including sub-cent 0.004 that rounds to 0.00)
         assertThatThrownBy(
                         () ->
                                 new Account(
                                         "100000000016",
                                         1L,
                                         BigDecimal.ZERO,
+                                        new BigDecimal("100000000.00"),
+                                        openedDate))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+        assertThatThrownBy(
+                        () ->
+                                new Account(
+                                        "100000000016",
+                                        1L,
+                                        new BigDecimal("0.004"),
                                         new BigDecimal("100000000.00"),
                                         openedDate))
                 .isInstanceOf(BusinessRuleException.class)

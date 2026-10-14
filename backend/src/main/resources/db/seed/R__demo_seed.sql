@@ -83,13 +83,36 @@ FROM (
 ) AS v(ref_no, tx_type, src_acc_num, tgt_acc_num, amount, fee, src_bal_after, tgt_bal_after, sys_delta, location, description, created_at)
 LEFT JOIN core.account src ON src.account_number = v.src_acc_num
 LEFT JOIN core.account tgt ON tgt.account_number = v.tgt_acc_num
+WHERE (v.src_acc_num IS NULL OR src.id IS NOT NULL)
+  AND (v.tgt_acc_num IS NULL OR tgt.id IS NOT NULL)
 ON CONFLICT (reference_no) DO NOTHING;
 
--- 4. Synchronize sequences idempotently so newly generated codes/numbers never collide with seed baseline
+-- 4. Synchronize sequences dynamically and idempotently so newly generated codes/numbers never collide with existing or seeded data
 DO $$
+DECLARE
+    max_cust_seq BIGINT;
+    max_acc_seq  BIGINT;
 BEGIN
-    PERFORM setval('core.customer_code_seq', GREATEST((SELECT last_value FROM core.customer_code_seq), 20), true);
-    PERFORM setval('core.account_number_seq', GREATEST((SELECT last_value FROM core.account_number_seq), 12), true);
+    SELECT COALESCE(MAX(CAST(SUBSTRING(customer_code FROM 4) AS BIGINT) - 8000000), 0)
+      INTO max_cust_seq
+      FROM core.customer
+     WHERE customer_code ~ '^CUS[0-9]+$';
+
+    SELECT COALESCE(MAX(CAST(SUBSTRING(account_number FROM 4 FOR 8) AS BIGINT) - 80000000), 0)
+      INTO max_acc_seq
+      FROM core.account
+     WHERE account_number ~ '^100[0-9]{9}$';
+
+    PERFORM setval(
+        'core.customer_code_seq',
+        GREATEST((SELECT last_value FROM core.customer_code_seq), max_cust_seq, 20),
+        true
+    );
+    PERFORM setval(
+        'core.account_number_seq',
+        GREATEST((SELECT last_value FROM core.account_number_seq), max_acc_seq, 12),
+        true
+    );
 END $$;
 
 -- 5. Seed synthetic CUSTOMER login accounts (default demo password: Customer@123 hashed with BCrypt strength 10)

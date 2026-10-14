@@ -1,5 +1,7 @@
 package com.example.corebanking.transaction.domain;
 
+import com.example.corebanking.common.domain.BusinessRuleException;
+import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.Money;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -51,6 +53,12 @@ public class TieredFeePolicy implements FeePolicy {
     public Money calculateFee(TransactionType type, Money amount) {
         Objects.requireNonNull(type, "transaction type must not be null");
         Objects.requireNonNull(amount, "transaction amount must not be null");
+
+        if (type == TransactionType.REVERSAL) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Fee calculation is not supported for REVERSAL transactions");
+        }
 
         if (amount.isNegative() || amount.isZero()) {
             throw new IllegalArgumentException("transaction amount must be strictly positive");

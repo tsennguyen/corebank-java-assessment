@@ -118,7 +118,8 @@ class AccountServiceTest {
                         "Ha Noi",
                         LocalDate.of(1990, 1, 15));
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(1L))
+                .thenReturn(Optional.of(customer));
         when(accountNumberGenerator.nextAccountNumber()).thenReturn("100000000016");
         when(accountRepository.save(any(Account.class)))
                 .thenAnswer(
@@ -149,7 +150,8 @@ class AccountServiceTest {
                 new CreateAccountRequest(
                         999L, new BigDecimal("10000000.00"), new BigDecimal("50000000.00"));
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(999L))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> accountService.createAccount(request))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -174,7 +176,8 @@ class AccountServiceTest {
                         "Ha Noi",
                         LocalDate.of(1990, 1, 15));
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(1L))
+                .thenReturn(Optional.of(customer));
 
         assertThatThrownBy(() -> accountService.createAccount(request))
                 .isInstanceOf(BusinessRuleException.class)
@@ -326,7 +329,7 @@ class AccountServiceTest {
     }
 
     @Test
-    @DisplayName("closeAccount closes account with zero balance")
+    @DisplayName("closeAccount closes account with zero balance under pessimistic lock")
     void closeAccount_shouldSucceedWhenBalanceZero() {
         Account account =
                 new Account(
@@ -337,7 +340,7 @@ class AccountServiceTest {
                         LocalDate.of(2026, 10, 9));
         setId(account, 10L);
 
-        when(accountRepository.findById(10L)).thenReturn(Optional.of(account));
+        when(accountRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(account));
 
         accountService.closeAccount(10L);
 
@@ -359,7 +362,7 @@ class AccountServiceTest {
         setId(account, 10L);
         setBalance(account, new BigDecimal("100000.00"));
 
-        when(accountRepository.findById(10L)).thenReturn(Optional.of(account));
+        when(accountRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(account));
 
         assertThatThrownBy(() -> accountService.closeAccount(10L))
                 .isInstanceOf(BusinessRuleException.class)

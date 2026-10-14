@@ -4,7 +4,7 @@
 - **Đã làm gì:**
   - Viết Flyway migration `V3__account.sql` tạo bảng `core.account`, sequence `account_number_seq` và các ràng buộc `CHECK (balance >= 0)`, `CHECK (transaction_limit > 0 AND daily_limit >= transaction_limit)`.
   - Triển khai `AccountNumberGenerator` sinh số tài khoản 12 chữ số: tiền tố `100` + 8 chữ số sequence + 1 chữ số kiểm tra Luhn checksum.
-  - Triển khai `BalanceTierPolicy` sử dụng cấu trúc dữ liệu `TreeMap.floorEntry` để phân loại nhóm số dư (`LOW`, `MEDIUM`, `HIGH`, `VIP`) với độ phức tạp $O(\log n)$.
+  - Triển khai `BalanceTierPolicy` sử dụng cấu trúc dữ liệu `TreeMap.floorEntry` để phân loại nhóm số dư (`LOW`, `MEDIUM`, `HIGH`) với độ phức tạp $O(\log n)$.
   - Triển khai `AccountCustomerDeletionGuard` chặn xóa khách hàng khi vẫn còn tài khoản đang hoạt động.
   - Xây dựng `AccountController` và `AccountService`: mở tài khoản (201), xem chi tiết (200), tìm kiếm phân trang (200), điều chỉnh hạn mức (200), đóng tài khoản (204).
 - **Vì sao làm vậy:** Số tài khoản theo chuẩn Luhn giúp phát hiện ngay sai sót khi người dùng nhập nhầm số tài khoản. Ràng buộc đóng tài khoản chỉ cho phép khi số dư bằng 0 bảo vệ tài sản của khách hàng.

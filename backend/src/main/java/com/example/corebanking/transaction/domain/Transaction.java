@@ -259,6 +259,11 @@ public class Transaction extends BaseEntity {
             throw new BusinessRuleException(
                     ErrorCode.INVALID_STATUS_TRANSITION, "Cannot reverse a reversal transaction");
         }
+        if (this.status != TransactionStatus.COMPLETED) {
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Cannot reverse transaction with status: " + this.status);
+        }
         this.status = TransactionStatus.REVERSED;
     }
 

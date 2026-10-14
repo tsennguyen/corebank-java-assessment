@@ -16,6 +16,8 @@ import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,12 +46,17 @@ public class IdempotencyService {
         this.ttlHours = ttlHours;
     }
 
-    /** Validates that the idempotency key header is present and non-blank. */
+    /** Validates that the idempotency key header is present, non-blank, and within 128 chars. */
     public void validateKey(String idempotencyKey) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new BusinessRuleException(
                     ErrorCode.IDEMPOTENCY_KEY_MISSING,
                     "Required header 'Idempotency-Key' is missing or blank");
+        }
+        if (idempotencyKey.trim().length() > 128) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Header 'Idempotency-Key' must not exceed 128 characters");
         }
     }
 
@@ -87,7 +94,9 @@ public class IdempotencyService {
         String requestHash = computeRequestHash(method, path, requestPayload);
 
         try {
-            idempotencyRepository.acquireAdvisoryLock(currentScope + ":" + trimmedKey);
+            idempotencyRepository.acquireAdvisoryLock(currentScope, trimmedKey);
+        } catch (PessimisticLockingFailureException | QueryTimeoutException e) {
+            throw e;
         } catch (Exception e) {
             log.debug("Advisory lock acquisition skipped or unsupported: {}", e.getMessage());
         }
@@ -97,25 +106,34 @@ public class IdempotencyService {
 
         if (existing.isPresent()) {
             IdempotencyKey record = existing.get();
-            if (!record.getRequestHash().equals(requestHash)) {
-                throw new BusinessRuleException(
-                        ErrorCode.IDEMPOTENCY_KEY_REUSED,
-                        "Idempotency key '"
-                                + trimmedKey
-                                + "' has already been used with a different request payload");
-            }
-            try {
-                T cachedResponse = objectMapper.readValue(record.getResponseBody(), responseType);
-                log.info(
-                        "Idempotent replay served [key='{}', scope='{}', status={}]",
-                        trimmedKey,
-                        currentScope,
-                        record.getResponseStatus());
-                return IdempotencyResult.replayed(cachedResponse);
-            } catch (JsonProcessingException e) {
-                log.error("Failed to deserialize cached response body for key='{}'", trimmedKey, e);
-                throw new IllegalStateException(
-                        "Failed to deserialize idempotency cached response", e);
+            if (record.isExpired(clock.instant())) {
+                idempotencyRepository.delete(record);
+                idempotencyRepository.flush();
+            } else {
+                if (!record.getRequestHash().equals(requestHash)) {
+                    throw new BusinessRuleException(
+                            ErrorCode.IDEMPOTENCY_KEY_REUSED,
+                            "Idempotency key '"
+                                    + trimmedKey
+                                    + "' has already been used with a different request payload");
+                }
+                try {
+                    T cachedResponse =
+                            objectMapper.readValue(record.getResponseBody(), responseType);
+                    log.info(
+                            "Idempotent replay served [key='{}', scope='{}', status={}]",
+                            trimmedKey,
+                            currentScope,
+                            record.getResponseStatus());
+                    return IdempotencyResult.replayed(cachedResponse);
+                } catch (JsonProcessingException e) {
+                    log.error(
+                            "Failed to deserialize cached response body for key='{}'",
+                            trimmedKey,
+                            e);
+                    throw new IllegalStateException(
+                            "Failed to deserialize idempotency cached response", e);
+                }
             }
         }
 

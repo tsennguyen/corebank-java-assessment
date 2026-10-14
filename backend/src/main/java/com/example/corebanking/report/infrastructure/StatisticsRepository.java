@@ -38,10 +38,14 @@ public class StatisticsRepository {
                     SELECT source_account_id AS account_id
                     FROM core.transaction
                     WHERE source_account_id IS NOT NULL
+                      AND status = 'COMPLETED'
+                      AND type <> 'REVERSAL'
                     UNION ALL
                     SELECT target_account_id AS account_id
                     FROM core.transaction
                     WHERE target_account_id IS NOT NULL
+                      AND status = 'COMPLETED'
+                      AND type <> 'REVERSAL'
                 ) tx_refs
                 GROUP BY account_id
             ),
@@ -63,11 +67,11 @@ public class StatisticsRepository {
 
     private static final String CUSTOMERS_BY_LOCATION_SQL =
             """
-            SELECT COALESCE(c.location, 'UNKNOWN') AS location,
+            SELECT COALESCE(NULLIF(TRIM(c.location), ''), 'UNKNOWN') AS location,
                    COUNT(*) AS customer_count
             FROM core.customer c
             WHERE c.deleted_at IS NULL
-            GROUP BY COALESCE(c.location, 'UNKNOWN')
+            GROUP BY COALESCE(NULLIF(TRIM(c.location), ''), 'UNKNOWN')
             ORDER BY customer_count DESC, location ASC
             """;
 

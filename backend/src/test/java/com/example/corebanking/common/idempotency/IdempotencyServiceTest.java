@@ -282,6 +282,86 @@ class IdempotencyServiceTest {
     }
 
     @Test
+    @DisplayName("validateKey throws VALIDATION_FAILED when key exceeds 128 characters")
+    void validateKey_whenExceeds128Chars_shouldThrowValidationFailed() {
+        assertThatThrownBy(() -> idempotencyService.validateKey("k".repeat(129)))
+                .isInstanceOf(BusinessRuleException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
+    @DisplayName("execute deletes expired record and executes new action with replayed=false")
+    void execute_whenExistingRecordExpired_shouldDeleteAndExecuteFreshAction() throws Exception {
+        DepositRequest request =
+                new DepositRequest(
+                        1L, new BigDecimal("500000.00"), "Hà Nội", "Nạp tiền thử nghiệm");
+        TransactionResponse response = sampleResponse();
+        String json = objectMapper.writeValueAsString(response);
+        String hash =
+                idempotencyService.computeRequestHash(
+                        "POST", "/api/v1/transactions/deposits", request);
+
+        IdempotencyKey expiredRecord =
+                IdempotencyKey.of(
+                        "uuid-key-expired",
+                        "DEFAULT",
+                        hash,
+                        201,
+                        json,
+                        Instant.parse("2026-10-11T09:00:00Z"),
+                        Instant.parse("2026-10-12T09:00:00Z")); // expired before 2026-10-13T10:00Z
+
+        when(idempotencyRepository.findById(any())).thenReturn(Optional.of(expiredRecord));
+
+        AtomicBoolean executed = new AtomicBoolean(false);
+        IdempotencyResult<TransactionResponse> result =
+                idempotencyService.execute(
+                        "uuid-key-expired",
+                        "DEFAULT",
+                        "POST",
+                        "/api/v1/transactions/deposits",
+                        request,
+                        TransactionResponse.class,
+                        () -> {
+                            executed.set(true);
+                            return response;
+                        });
+
+        assertThat(executed.get()).isTrue();
+        assertThat(result.replayed()).isFalse();
+        verify(idempotencyRepository).delete(expiredRecord);
+        verify(idempotencyRepository).flush();
+        verify(idempotencyRepository).saveAndFlush(any(IdempotencyKey.class));
+    }
+
+    @Test
+    @DisplayName("execute rethrows PessimisticLockingFailureException from acquireAdvisoryLock")
+    void execute_whenAdvisoryLockTimesOut_shouldRethrowLockException() {
+        DepositRequest request =
+                new DepositRequest(
+                        1L, new BigDecimal("500000.00"), "Hà Nội", "Nạp tiền thử nghiệm");
+
+        org.mockito.Mockito.doThrow(
+                        new org.springframework.dao.CannotAcquireLockException(
+                                "lock timeout on advisory lock"))
+                .when(idempotencyRepository)
+                .acquireAdvisoryLock(any(), any());
+
+        assertThatThrownBy(
+                        () ->
+                                idempotencyService.execute(
+                                        "uuid-key-lock",
+                                        "DEFAULT",
+                                        "POST",
+                                        "/api/v1/transactions/deposits",
+                                        request,
+                                        TransactionResponse.class,
+                                        this::sampleResponse))
+                .isInstanceOf(org.springframework.dao.CannotAcquireLockException.class);
+    }
+
+    @Test
     @DisplayName("cleanupScheduler calls deleteExpiredKeys with current clock instant")
     void cleanupScheduler_shouldDeleteExpiredKeys() {
         IdempotencyCleanupScheduler scheduler =

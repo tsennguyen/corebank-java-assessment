@@ -18,6 +18,8 @@ services:
         value: "-XX:MaxRAMPercentage=75.0 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true"
       - key: HIKARI_MAX_POOL_SIZE
         value: "5"
+      - key: FLYWAY_LOCATIONS
+        value: "classpath:db/migration,classpath:db/seed"
       - key: DATABASE_URL
         sync: false
       - key: DATABASE_USER

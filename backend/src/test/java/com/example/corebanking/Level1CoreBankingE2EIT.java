@@ -494,6 +494,23 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                 .andExpect(jsonPath("$.sourceBalanceAfter").value(148998000.00));
     }
 
+    @Test
+    @WithMockUser(roles = "CUSTOMER")
+    @DisplayName(
+            "ROLE_CUSTOMER is forbidden (403 ACCESS_DENIED) from accessing admin-only Customer and"
+                    + " Statistics endpoints (L2-02)")
+    void customerRole_shouldBeForbiddenFromAdminOnlyEndpoints() throws Exception {
+        mockMvc.perform(get("/api/v1/customers"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(get("/api/v1/statistics/balance-tiers"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
     private static void assertValidLuhnAccountNumber(String accountNumber) {
         assertThat(accountNumber).hasSize(12).startsWith("100");
         int expectedCheckDigit =

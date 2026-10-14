@@ -29,7 +29,6 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +52,6 @@ public class TransactionService {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionService.class);
     private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("id", "createdAt", "amount");
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
@@ -439,6 +437,12 @@ public class TransactionService {
                     (description != null ? description + " | " : "")
                             + request.recipientInfo().trim();
         }
+        if (description != null && description.length() > 500) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Combined payment description and recipientInfo must not exceed 500"
+                            + " characters");
+        }
 
         Transaction transaction =
                 Transaction.createPayment(
@@ -489,7 +493,7 @@ public class TransactionService {
 
         Transaction transaction =
                 transactionRepository
-                        .findById(id)
+                        .findByIdForUpdate(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Transaction", id));
 
         transaction.updateMetadata(request.description(), request.location());
@@ -513,7 +517,7 @@ public class TransactionService {
     public TransactionResponse reverseTransaction(Long id) {
         Transaction original =
                 transactionRepository
-                        .findById(id)
+                        .findByIdForUpdate(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Transaction", id));
 
         if (original.getStatus() == TransactionStatus.REVERSED
@@ -654,7 +658,7 @@ public class TransactionService {
     }
 
     private Instant getStartOfDay() {
-        return LocalDate.now(clock).atStartOfDay(BUSINESS_ZONE).toInstant();
+        return LocalDate.now(clock).atStartOfDay(clock.getZone()).toInstant();
     }
 
     /**
@@ -729,13 +733,15 @@ public class TransactionService {
     }
 
     private void validatePaginationAndSort(Pageable pageable) {
-        if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
-        }
-        if (pageable.getPageNumber() < 0) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+        if (!pageable.isUnpaged()) {
+            if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
+            }
+            if (pageable.getPageNumber() < 0) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+            }
         }
 
         for (Sort.Order order : pageable.getSort()) {

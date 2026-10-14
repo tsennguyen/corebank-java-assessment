@@ -530,6 +530,41 @@ class TransactionServiceTest {
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Account not found with identifier: 999");
         }
+
+        @Test
+        @DisplayName(
+                "payment() throws VALIDATION_FAILED when combined description and recipientInfo"
+                        + " exceed 500 characters")
+        void payment_whenCombinedDescriptionExceeds500Chars_shouldThrowValidationFailed() {
+            Account account =
+                    createAccount(
+                            1L,
+                            new BigDecimal("2000000.00"),
+                            new BigDecimal("50000000.00"),
+                            new BigDecimal("100000000.00"));
+            PaymentRequest request =
+                    new PaymentRequest(
+                            1L,
+                            new BigDecimal("500000.00"),
+                            "Web",
+                            "A".repeat(450),
+                            "B".repeat(100));
+
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account));
+            when(transactionRepository.sumOutgoingAmountSince(
+                            eq(1L), eq(TransactionStatus.COMPLETED), any(Instant.class)))
+                    .thenReturn(BigDecimal.ZERO);
+            when(feePolicy.calculateFee(TransactionType.PAYMENT, Money.of("500000.00")))
+                    .thenReturn(Money.of("0.00"));
+            when(referenceGenerator.generate()).thenReturn("TXN-20261012-PAY002");
+
+            assertThatThrownBy(() -> transactionService.payment(request))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.VALIDATION_FAILED));
+        }
     }
 
     // ==========================================
@@ -711,7 +746,7 @@ class TransactionServiceTest {
                             new BigDecimal("100000.00"),
                             "Old Loc",
                             "Old Desc");
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
             when(transactionRepository.saveAndFlush(any(Transaction.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
@@ -752,7 +787,7 @@ class TransactionServiceTest {
                 "updateTransactionMetadata throws ResourceNotFoundException when transaction not"
                         + " found")
         void updateTransactionMetadata_whenNotFound_shouldThrowNotFound() {
-            when(transactionRepository.findById(999L)).thenReturn(Optional.empty());
+            when(transactionRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
             UpdateTransactionRequest request = new UpdateTransactionRequest("Desc", "Loc");
 
             assertThatThrownBy(() -> transactionService.updateTransactionMetadata(999L, request))
@@ -773,7 +808,7 @@ class TransactionServiceTest {
                             "Loc",
                             "Desc");
             tx.markReversed();
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
             UpdateTransactionRequest request = new UpdateTransactionRequest("New Desc", "New Loc");
 
             assertThatThrownBy(() -> transactionService.updateTransactionMetadata(1L, request))
@@ -794,7 +829,7 @@ class TransactionServiceTest {
                 "reverseTransaction throws ResourceNotFoundException when transaction does not"
                         + " exist")
         void reverseTransaction_whenNotFound_shouldThrowNotFound() {
-            when(transactionRepository.findById(999L)).thenReturn(Optional.empty());
+            when(transactionRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(999L))
                     .isInstanceOf(ResourceNotFoundException.class);
@@ -812,7 +847,7 @@ class TransactionServiceTest {
                             "Loc",
                             "Desc");
             tx.markReversed();
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(1L))
                     .isInstanceOf(BusinessRuleException.class)
@@ -834,7 +869,7 @@ class TransactionServiceTest {
                             new BigDecimal("100000.00"),
                             "Loc",
                             "Desc");
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(true);
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(1L))
@@ -861,7 +896,7 @@ class TransactionServiceTest {
             Transaction reversalTx =
                     Transaction.createDepositReversal(
                             "TXN-REV003-R", orig, BigDecimal.ZERO, null, null);
-            when(transactionRepository.findById(2L)).thenReturn(Optional.of(reversalTx));
+            when(transactionRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(reversalTx));
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(2L))
                     .isInstanceOf(BusinessRuleException.class)
@@ -893,7 +928,7 @@ class TransactionServiceTest {
                             "HN",
                             "Deposit");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(targetAccount));
             when(referenceGenerator.generate()).thenReturn("TXN-REV-DEP-001");
@@ -934,7 +969,7 @@ class TransactionServiceTest {
                             "ATM",
                             "Withdrawal");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(sourceAccount));
             when(referenceGenerator.generate()).thenReturn("TXN-REV-WTH-001");
@@ -971,7 +1006,7 @@ class TransactionServiceTest {
                             "Online",
                             "Bill payment");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(sourceAccount));
             when(referenceGenerator.generate()).thenReturn("TXN-REV-PAY-001");
@@ -1021,7 +1056,7 @@ class TransactionServiceTest {
                             "Online",
                             "Transfer");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account1));
             when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(account2));
@@ -1080,7 +1115,7 @@ class TransactionServiceTest {
                             "Online",
                             "Transfer");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account1));
             when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(account2));

@@ -15,7 +15,7 @@ RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
 
 COPY src src
 RUN ./mvnw -B -DskipTests package && \
-    java -Djarmode=tools -jar target/*.jar extract --layers --launcher --destination extracted
+    java -Djarmode=tools -jar target/corebanking-backend-*.jar extract --layers --launcher --destination extracted
 
 # ==============================================================================
 # Stage 2: Minimal Hardened Runtime Image (Temurin JRE 21, non-root, fontconfig)

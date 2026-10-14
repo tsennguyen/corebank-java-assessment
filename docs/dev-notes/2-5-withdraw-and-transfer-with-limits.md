@@ -7,7 +7,7 @@
     - Rút tiền / Thanh toán: `systemBalanceDelta = -(amount + fee)`.
     - Chuyển khoản nội bộ: `systemBalanceDelta = -fee` (số tiền chuyển bảo toàn trong hệ thống, chỉ trừ phí dịch vụ).
   - Triển khai Strategy pattern `LimitProvider` và `LimitPolicy` kiểm tra hạn mức giao dịch (`LIMIT_EXCEEDED` 422) và hạn mức ngày (`DAILY_LIMIT_EXCEEDED` 422).
-  - Bổ sung truy vấn SQL aggregate `sumOutgoingAmountSince` trong `TransactionRepository` với mốc thời gian bắt đầu ngày theo múi giờ `Asia/Ho_Chi_Minh` qua bean `Clock`.
+  - Bổ sung truy vấn SQL aggregate `sumOutgoingAmountSince` trong `TransactionRepository` với mốc thời gian bắt đầu ngày theo múi giờ của bean `Clock` (`clock.getZone()`, mặc định `Asia/Ho_Chi_Minh`).
   - Triển khai `TransactionService`:
     - `withdraw()`: Khóa tài khoản bi quan, kiểm tra hạn mức, tính phí, trích nợ `amount + fee`, lưu giao dịch, phát sự kiện `TransactionCompletedEvent`.
     - `transfer()`: Kiểm tra `sourceAccountId != targetAccountId`, sắp xếp khóa 2 tài khoản theo thứ tự ID tăng dần (`min(fromId, toId)` trước `max(fromId, toId)`), trích nợ nguồn `amount + fee`, cộng tiền đích `amount`, ghi nhận giao dịch, phát sự kiện.

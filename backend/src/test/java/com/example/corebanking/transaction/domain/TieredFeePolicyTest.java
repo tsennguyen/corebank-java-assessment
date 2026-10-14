@@ -165,10 +165,15 @@ class TieredFeePolicyTest {
         }
 
         @Test
-        @DisplayName("REVERSAL transactions have zero fee")
-        void calculateFee_reversal_shouldBeZero() {
-            Money fee = policy.calculateFee(TransactionType.REVERSAL, Money.of("10000000.00"));
-            assertThat(fee).isEqualTo(Money.of("0.00"));
+        @DisplayName("REVERSAL transactions are rejected with VALIDATION_FAILED")
+        void calculateFee_reversal_shouldThrowValidationFailed() {
+            assertThatThrownBy(
+                            () ->
+                                    policy.calculateFee(
+                                            TransactionType.REVERSAL, Money.of("10000000.00")))
+                    .isInstanceOf(com.example.corebanking.common.domain.BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(com.example.corebanking.common.domain.ErrorCode.VALIDATION_FAILED);
         }
     }
 

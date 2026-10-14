@@ -55,6 +55,10 @@ jobs:
           WHOAMI=$(docker compose exec -T app whoami)
           echo "Container user: $WHOAMI"
           test "$WHOAMI" = "appuser"
+          JVM_ENV=$(docker compose exec -T app printenv JAVA_TOOL_OPTIONS)
+          echo "Container JAVA_TOOL_OPTIONS: $JVM_ENV"
+          echo "$JVM_ENV" | grep -q "MaxRAMPercentage=75.0"
+          echo "$JVM_ENV" | grep -q "UseSerialGC"
 
       - name: Verify Swagger OpenAPI docs, JWT authentication, and seeded Level 1 statistics
         run: |

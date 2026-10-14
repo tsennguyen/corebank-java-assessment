@@ -184,20 +184,23 @@ public class Account extends BaseEntity {
         Objects.requireNonNull(transactionLimit, "transactionLimit must not be null");
         Objects.requireNonNull(dailyLimit, "dailyLimit must not be null");
 
-        if (transactionLimit.compareTo(BigDecimal.ZERO) <= 0) {
+        BigDecimal scaledTxLimit = transactionLimit.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal scaledDailyLimit = dailyLimit.setScale(2, RoundingMode.HALF_UP);
+
+        if (scaledTxLimit.compareTo(BigDecimal.ZERO) <= 0) {
             throw new BusinessRuleException(
                     ErrorCode.VALIDATION_FAILED, "Transaction limit must be greater than zero");
         }
-        if (dailyLimit.compareTo(transactionLimit) < 0) {
+        if (scaledDailyLimit.compareTo(scaledTxLimit) < 0) {
             throw new BusinessRuleException(
                     ErrorCode.VALIDATION_FAILED,
                     "Daily limit ("
-                            + dailyLimit
+                            + scaledDailyLimit
                             + ") must be greater than or equal to transaction limit ("
-                            + transactionLimit
+                            + scaledTxLimit
                             + ")");
         }
-        this.transactionLimit = transactionLimit.setScale(2, RoundingMode.HALF_UP);
-        this.dailyLimit = dailyLimit.setScale(2, RoundingMode.HALF_UP);
+        this.transactionLimit = scaledTxLimit;
+        this.dailyLimit = scaledDailyLimit;
     }
 }

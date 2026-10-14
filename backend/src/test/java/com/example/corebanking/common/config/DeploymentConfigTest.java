@@ -74,7 +74,7 @@ class DeploymentConfigTest {
                 .contains("maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}")
                 .contains("connection-timeout: 5000")
                 .contains("lock_timeout=3000")
-                .contains("classpath:db/migration,classpath:db/seed");
+                .contains("${FLYWAY_LOCATIONS:classpath:db/migration}");
     }
 
     private static Path resolveBackendFile(String relativePath) {

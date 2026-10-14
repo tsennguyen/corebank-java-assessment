@@ -183,7 +183,7 @@ public class CustomerService {
     public void deleteCustomer(Long id) {
         Customer customer =
                 customerRepository
-                        .findByIdAndDeletedAtIsNull(id)
+                        .findByIdAndDeletedAtIsNullForUpdate(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Customer", id));
 
         customerDeletionGuard.validateCanDeleteCustomer(id);
@@ -213,13 +213,15 @@ public class CustomerService {
     }
 
     private void validatePaginationAndSort(Pageable pageable) {
-        if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
-        }
-        if (pageable.getPageNumber() < 0) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+        if (!pageable.isUnpaged()) {
+            if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
+            }
+            if (pageable.getPageNumber() < 0) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+            }
         }
 
         for (Sort.Order order : pageable.getSort()) {
