@@ -2,6 +2,7 @@ package com.example.corebanking.account.api.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
@@ -14,8 +15,20 @@ public record CreateAccountRequest(
         @Schema(description = "Per-transaction spending limit", example = "50000000.00")
                 @NotNull(message = "Transaction limit is required")
                 @DecimalMin(value = "0.01", message = "Transaction limit must be greater than zero")
+                @Digits(
+                        integer = 17,
+                        fraction = 2,
+                        message =
+                                "Transaction limit must have at most 17 integer digits and 2"
+                                        + " decimal places")
                 BigDecimal transactionLimit,
         @Schema(description = "Daily aggregate spending limit", example = "100000000.00")
                 @NotNull(message = "Daily limit is required")
                 @DecimalMin(value = "0.01", message = "Daily limit must be greater than zero")
+                @Digits(
+                        integer = 17,
+                        fraction = 2,
+                        message =
+                                "Daily limit must have at most 17 integer digits and 2 decimal"
+                                        + " places")
                 BigDecimal dailyLimit) {}

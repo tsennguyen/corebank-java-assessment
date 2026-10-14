@@ -293,7 +293,7 @@ class CustomerServiceTest {
     }
 
     @Test
-    @DisplayName("deleteCustomer marks customer with deletion timestamp")
+    @DisplayName("deleteCustomer marks customer with deletion timestamp under pessimistic lock")
     void deleteCustomer_shouldSoftDelete() {
         Customer customer =
                 new Customer(
@@ -303,11 +303,13 @@ class CustomerServiceTest {
                         "an.nguyen@example.com",
                         "0900000001",
                         "123 Pho Hue",
-                        "Ha Noi",
+                        "  Ha Noi  ",
                         LocalDate.of(1990, 1, 15));
         setId(customer, 1L);
+        assertThat(customer.getLocation()).isEqualTo("Ha Noi");
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(1L))
+                .thenReturn(Optional.of(customer));
 
         customerService.deleteCustomer(1L);
 
@@ -331,7 +333,8 @@ class CustomerServiceTest {
                         LocalDate.of(1990, 1, 15));
         setId(customer, 1L);
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(1L))
+                .thenReturn(Optional.of(customer));
         org.mockito.Mockito.doThrow(
                         new BusinessRuleException(
                                 ErrorCode.CUSTOMER_HAS_ACTIVE_ACCOUNTS,
@@ -349,5 +352,21 @@ class CustomerServiceTest {
 
         org.mockito.Mockito.verify(customerRepository, org.mockito.Mockito.never())
                 .save(any(Customer.class));
+    }
+
+    @Test
+    @DisplayName(
+            "searchCustomers supports Pageable.unpaged() without throwing"
+                    + " UnsupportedOperationException")
+    void searchCustomers_shouldSupportUnpaged() {
+        when(customerRepository.findAll(
+                        any(Specification.class),
+                        any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        PageResponse<CustomerResponse> result =
+                customerService.searchCustomers(
+                        null, null, org.springframework.data.domain.Pageable.unpaged());
+        assertThat(result.content()).isEmpty();
     }
 }

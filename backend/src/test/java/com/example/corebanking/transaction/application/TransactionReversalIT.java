@@ -113,4 +113,75 @@ class TransactionReversalIT extends IntegrationTestBase {
                                 assertThat(((BusinessRuleException) ex).getErrorCode())
                                         .isEqualTo(ErrorCode.ALREADY_REVERSED));
     }
+
+    @Test
+    @DisplayName(
+            "Concurrent reversal attempts on the same transaction allow exactly one success and"
+                    + " reject the second with ALREADY_REVERSED under pessimistic lock")
+    void concurrentReversals_shouldAllowExactlyOneSuccess() throws Exception {
+        Customer customer =
+                customerRepository.save(
+                        new Customer(
+                                "CUS9990044",
+                                "Phan Đồng Thời",
+                                "000999888445",
+                                "phandongthoi@example.com",
+                                "0900000045",
+                                "Hà Nội",
+                                "Hà Nội",
+                                LocalDate.of(1992, 5, 10)));
+
+        Account account =
+                new Account(
+                        "100999999044",
+                        customer.getId(),
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.now());
+        account.credit(Money.of("10000000.00"));
+        Account savedAccount = accountRepository.save(account);
+
+        TransactionResponse deposit =
+                transactionService.deposit(
+                        new com.example.corebanking.transaction.api.dto.DepositRequest(
+                                savedAccount.getId(),
+                                new BigDecimal("2000000.00"),
+                                "Hà Nội",
+                                "Nạp thử đảo đồng thời"));
+
+        java.util.concurrent.CountDownLatch startLatch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.ExecutorService executor =
+                java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.atomic.AtomicInteger successes =
+                new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger alreadyReversedErrors =
+                new java.util.concurrent.atomic.AtomicInteger(0);
+
+        Runnable task =
+                () -> {
+                    try {
+                        startLatch.await();
+                        transactionService.reverseTransaction(deposit.id());
+                        successes.incrementAndGet();
+                    } catch (BusinessRuleException ex) {
+                        if (ex.getErrorCode() == ErrorCode.ALREADY_REVERSED) {
+                            alreadyReversedErrors.incrementAndGet();
+                        }
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                    }
+                };
+
+        var f1 = executor.submit(task);
+        var f2 = executor.submit(task);
+        startLatch.countDown();
+        f1.get();
+        f2.get();
+        executor.shutdown();
+
+        assertThat(successes.get()).isEqualTo(1);
+        assertThat(alreadyReversedErrors.get()).isEqualTo(1);
+        Account reloaded = accountRepository.findById(savedAccount.getId()).orElseThrow();
+        assertThat(reloaded.getBalance()).isEqualByComparingTo("10000000.00");
+    }
 }

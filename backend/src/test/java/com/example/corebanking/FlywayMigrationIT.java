@@ -188,6 +188,34 @@ class FlywayMigrationIT extends IntegrationTestBase {
 
     @Test
     @DisplayName(
+            "Flyway applies V6 idempotency_key migration successfully creating idempotency_key"
+                    + " table")
+    void flywayMigration_shouldApplyV6IdempotencyKeyMigrationSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection()) {
+            try (Statement statement = connection.createStatement();
+                    ResultSet rs =
+                            statement.executeQuery(
+                                    "SELECT version, description, type, script, success "
+                                            + "FROM core.flyway_schema_history "
+                                            + "WHERE version = '6'")) {
+                assertThat(rs.next())
+                        .as("Migration version 6 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script")).isEqualTo("V6__idempotency_key.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    connection.getMetaData().getTables(null, "core", "idempotency_key", null)) {
+                assertThat(rs.next())
+                        .as("Table 'idempotency_key' should exist in schema 'core'")
+                        .isTrue();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName(
             "Flyway applies V7 app_user migration successfully creating app_user table and"
                     + " constraints")
     void flywayMigration_shouldApplyV7AppUserMigrationSuccessfully() throws Exception {
@@ -211,6 +239,47 @@ class FlywayMigrationIT extends IntegrationTestBase {
             try (ResultSet rs =
                     connection.getMetaData().getTables(null, "core", "app_user", null)) {
                 assertThat(rs.next()).as("Table 'app_user' should exist in schema 'core'").isTrue();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V8 optimization migration creating"
+                    + " idx_tx_source_completed_created_amount covering index")
+    void flywayMigration_shouldApplyV8OptimizationSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT version, description, type, script, success "
+                                    + "FROM core.flyway_schema_history "
+                                    + "WHERE version = '8'")) {
+                assertThat(rs.next())
+                        .as("Migration version 8 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script"))
+                        .isEqualTo("V8__optimize_daily_limit_index_and_comments.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core'"
+                                    + " AND indexname ="
+                                    + " 'idx_tx_source_completed_created_amount'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("indexdef"))
+                        .contains("INCLUDE (amount)")
+                        .contains("COMPLETED");
+            }
+
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core'"
+                                    + " AND indexname = 'idx_customer_location'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("indexdef")).containsIgnoringCase("COALESCE");
             }
         }
     }

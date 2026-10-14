@@ -63,7 +63,9 @@ public class AccountService {
      */
     @Transactional
     public AccountResponse createAccount(CreateAccountRequest request) {
-        if (customerRepository.findByIdAndDeletedAtIsNull(request.customerId()).isEmpty()) {
+        if (customerRepository
+                .findByIdAndDeletedAtIsNullForUpdate(request.customerId())
+                .isEmpty()) {
             throw new ResourceNotFoundException("Customer", request.customerId());
         }
 
@@ -184,7 +186,7 @@ public class AccountService {
     public void closeAccount(Long id) {
         Account account =
                 accountRepository
-                        .findById(id)
+                        .findByIdForUpdate(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Account", id));
 
         account.close(clock.instant());
@@ -193,13 +195,15 @@ public class AccountService {
     }
 
     private void validatePaginationAndSort(Pageable pageable) {
-        if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
-        }
-        if (pageable.getPageNumber() < 0) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+        if (!pageable.isUnpaged()) {
+            if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
+            }
+            if (pageable.getPageNumber() < 0) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+            }
         }
 
         for (Sort.Order order : pageable.getSort()) {

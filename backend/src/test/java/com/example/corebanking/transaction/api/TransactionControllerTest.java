@@ -630,6 +630,28 @@ class TransactionControllerTest {
                                                     "has already been used with a different"
                                                             + " request payload")));
         }
+
+        @Test
+        @DisplayName("returns 400 with VALIDATION_FAILED when Idempotency-Key exceeds 128 chars")
+        void deposit_whenIdempotencyKeyExceeds128Chars_shouldReturn400() throws Exception {
+            DepositRequest request =
+                    new DepositRequest(
+                            1L, new BigDecimal("100000.00"), "Hà Nội", "Key dài quá 128 ký tự");
+
+            mockMvc.perform(
+                            post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "k".repeat(129))
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(
+                            jsonPath("$.detail")
+                                    .value(
+                                            "Header 'Idempotency-Key' must not exceed 128"
+                                                    + " characters"));
+        }
     }
 
     // ==========================================
@@ -754,6 +776,28 @@ class TransactionControllerTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.status").value(400))
                     .andExpect(jsonPath("$.code").value("IMMUTABLE_FIELD"));
+        }
+
+        @Test
+        @DisplayName(
+                "PATCH /api/v1/transactions/{id} captures extended immutable fields (status,"
+                        + " currency, systemBalanceDelta) via @JsonAnySetter")
+        void updateTransaction_withExtendedImmutableFields_shouldFlagHasImmutableFields()
+                throws Exception {
+            String rawPayload =
+                    """
+                    {
+                        "description": "Desc",
+                        "status": "REVERSED",
+                        "currency": "USD"
+                    }
+                    """;
+            UpdateTransactionRequest parsed =
+                    objectMapper.readValue(rawPayload, UpdateTransactionRequest.class);
+            org.assertj.core.api.Assertions.assertThatThrownBy(parsed::validateImmutability)
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.IMMUTABLE_FIELD);
         }
 
         @Test

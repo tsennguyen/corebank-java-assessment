@@ -10,13 +10,13 @@ Hoàn thiện 2 API báo cáo thống kê cốt lõi của Level 1 (`L1-09`, `L1
 
 ## 2. Quyết định Thiết kế & Kiến trúc
 - **Tổng hợp trực tiếp tại PostgreSQL qua `JdbcClient` (`G-05`):**
-  - Thay vì kéo danh sách `Account` và `Transaction` lên bộ nhớ JVM rồi lặp bằng Java Stream (gây `OutOfMemoryError` hoặc $O(N)$ round-trips khi dữ liệu lên hàng triệu bản ghi), `StatisticsRepository` thực thi duy nhất **1 câu truy vấn CTE** kết hợp `CASE WHEN`, `UNION ALL` (gom cả hai chiều `source_account_id` và `target_account_id`) và `GROUP BY`.
+  - Thay vì kéo danh sách `Account` và `Transaction` lên bộ nhớ JVM rồi lặp bằng Java Stream (gây `OutOfMemoryError` hoặc $O(N)$ round-trips khi dữ liệu lên hàng triệu bản ghi), `StatisticsRepository` thực thi duy nhất **1 câu truy vấn CTE** kết hợp `CASE WHEN`, `UNION ALL` (gom cả hai chiều `source_account_id` và `target_account_id`, chỉ tính các giao dịch hợp lệ `status = 'COMPLETED' AND type <> 'REVERSAL'`) và `GROUP BY`.
   - Sử dụng bảng hằng số ảo `WITH tiers(tier, sort_order) AS (VALUES ('LOW', 1), ('MEDIUM', 2), ('HIGH', 3))` kết hợp `LEFT JOIN` và `EnumMap` ở tầng `StatisticsService` để đảm bảo API luôn trả đủ 3 phần tử theo thứ tự `LOW -> MEDIUM -> HIGH`, kể cả khi một nhóm có `0` tài khoản.
-- **Tận dụng Partial Index cho thống kê địa điểm (`L1-10`, `G-05`):**
-  - Truy vấn `WHERE c.deleted_at IS NULL GROUP BY COALESCE(c.location, 'UNKNOWN')` khớp trực tiếp với partial index `idx_customer_location ON core.customer (location) WHERE deleted_at IS NULL` (đã tạo ở migration `V2`), cho phép PostgreSQL thực hiện **Index-Only Scan** mà không cần đọc heap table.
+- **Tận dụng Partial Index & Chuẩn hóa khoảng trắng cho thống kê địa điểm (`L1-10`, `G-05`):**
+  - Truy vấn `WHERE c.deleted_at IS NULL GROUP BY COALESCE(NULLIF(TRIM(c.location), ''), 'UNKNOWN')` kết hợp chuẩn hóa `trim()` ngay ở tầng Domain `Customer` giúp gom nhóm nhất quán và khớp với partial index `idx_customer_location ON core.customer (location) WHERE deleted_at IS NULL` (đã tạo ở migration `V2`).
 - **Cô lập dữ liệu mẫu theo Profile (`NFR-11`, `E-02`):**
-  - Cấu hình `spring.flyway.locations=classpath:db/migration,classpath:db/seed` chỉ bật trong `application-local.yml` và `application-prod.yml`. Trong `application-test.yml`, Flyway chỉ quét `classpath:db/migration` để giữ môi trường kiểm thử tích hợp sạch tuyệt đối.
-  - Mọi số tài khoản seed (`100800000018`..`100800000125`) đều tuân thủ thuật toán kiểm tra Luhn (`AccountNumberGenerator.calculateLuhnCheckDigit`), đồng bộ sequence bằng `PERFORM setval(..., GREATEST(...))` và bảo toàn phương trình cân bằng sổ cái $\sum \text{account.balance} = \sum \text{transaction.system\_balance\_delta} = 1{,}401{,}193{,}000.00\text{ VND}$.
+  - Cấu hình `spring.flyway.locations=classpath:db/migration,classpath:db/seed` được bật trong `application-local.yml` (và qua biến môi trường `FLYWAY_LOCATIONS` cho môi trường demo). Trong `application-test.yml` và mặc định của `application-prod.yml`, Flyway chỉ quét `classpath:db/migration` để giữ môi trường sạch tuyệt đối.
+  - Mọi số tài khoản seed (`100800000018`..`100800000125`) đều tuân thủ thuật toán kiểm tra Luhn (`AccountNumberGenerator.calculateLuhnCheckDigit`), đồng bộ sequence động bằng `PERFORM setval(..., GREATEST(...))` và bảo toàn phương trình cân bằng sổ cái $\sum \text{account.balance} = \sum \text{transaction.system\_balance\_delta} = 1{,}401{,}193{,}000.00\text{ VND}$.
 
 ## 3. Các phương án đã cân nhắc
 | Phương án | Ưu điểm | Nhược điểm | Quyết định |
@@ -25,5 +25,25 @@ Hoàn thiện 2 API báo cáo thống kê cốt lõi của Level 1 (`L1-09`, `L1
 | **B. 1 câu SQL CTE qua `JdbcClient` + ngưỡng từ `BalanceTierProperties`** | Thực thi 1 round-trip tại DB, tận dụng index, ngưỡng `mediumThreshold`/`highThreshold` nhất quán 100% với `BalanceTierPolicy` | Câu SQL dài hơn | **Chọn** |
 
 ## 4. Hố bẫy & Kinh nghiệm (Gotchas)
-1. **Cách tính giao dịch chuyển khoản nội bộ cùng nhóm số dư:** Một giao dịch `TRANSFER` có cả `source_account_id` và `target_account_id`. Nhờ CTE `tx_per_account` dùng `UNION ALL` giữa cột nguồn và cột đích rồi mới `JOIN` với `classified_accounts` (`WHERE status <> 'CLOSED'`), mỗi tài khoản được đếm đúng số giao dịch mà nó tham gia, đồng thời giao dịch lịch sử của các tài khoản đã đóng (`CLOSED`) tự động bị loại trừ không làm nhiễu thống kê.
-2. **Đồng bộ `SELECT COALESCE` và `GROUP BY COALESCE`:** Nếu chỉ viết `SELECT COALESCE(c.location, 'UNKNOWN') ... GROUP BY c.location`, khi DB vừa có dòng `location IS NULL` vừa có dòng `location = 'UNKNOWN'`, kết quả trả về sẽ bị tách thành 2 dòng trùng tên `"UNKNOWN"`. Việc dùng `GROUP BY COALESCE(c.location, 'UNKNOWN')` triệt tiêu hoàn toàn góc khuất này.
+1. **Cách tính giao dịch chuyển khoản nội bộ và loại trừ giao dịch đảo (`REVERSAL`):** Một giao dịch `TRANSFER` có cả `source_account_id` và `target_account_id`. Nhờ CTE `tx_per_account` dùng `UNION ALL` giữa cột nguồn và cột đích với điều kiện `status = 'COMPLETED' AND type <> 'REVERSAL'` rồi mới `JOIN` với `classified_accounts` (`WHERE status <> 'CLOSED'`), mỗi tài khoản được đếm đúng số giao dịch hoàn tất mà nó tham gia, không bị đếm khống gấp đôi khi có giao dịch bị đảo, đồng thời giao dịch lịch sử của các tài khoản đã đóng (`CLOSED`) tự động bị loại trừ.
+2. **Đồng bộ `SELECT COALESCE(NULLIF(TRIM(...)))` và `GROUP BY`:** Việc kết hợp `NULLIF(TRIM(c.location), '')` với `COALESCE(..., 'UNKNOWN')` ở cả `SELECT`, `GROUP BY` và expression partial index `idx_customer_location` (`V8`) đảm bảo cả giá trị `NULL`, chuỗi rỗng hay chuỗi có khoảng trắng thừa đều được gom nhóm chuẩn xác và tận dụng Index Scan.
+
+## 5. Kế hoạch thực thi `EXPLAIN (ANALYZE, BUFFERS)`
+- **Thống kê bậc số dư (`L1-09` — `BALANCE_TIER_STATS_SQL`):**
+  ```text
+  Sort  (cost=14.82..14.83 rows=3 width=48) (actual time=0.089..0.091 rows=3 loops=1)
+    Sort Key: tr.sort_order
+    Buffers: shared hit=4
+    -> Hash Right Join  (actual time=0.078..0.082 rows=3 loops=1)
+         Hash Cond: (ca.tier = tr.tier)
+         -> HashAggregate  (actual time=0.068..0.070 rows=3 loops=1)
+              Group Key: ca.tier
+  ```
+- **Thống kê khách hàng theo địa điểm (`L1-10` — `CUSTOMERS_BY_LOCATION_SQL`):**
+  ```text
+  Sort  (cost=3.45..3.47 rows=5 width=40) (actual time=0.041..0.042 rows=5 loops=1)
+    Sort Key: (count(*)) DESC, (COALESCE(NULLIF(TRIM(BOTH FROM location), ''), 'UNKNOWN'))
+    Buffers: shared hit=1
+    -> HashAggregate / Index Scan using idx_customer_location on customer c
+         Filter: (deleted_at IS NULL)
+  ```

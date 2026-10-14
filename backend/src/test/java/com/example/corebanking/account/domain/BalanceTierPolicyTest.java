@@ -42,4 +42,25 @@ class BalanceTierPolicyTest {
         assertThat(policy.classify(new BigDecimal("100000000.00"))).isEqualTo(BalanceTier.HIGH);
         assertThat(policy.classify(new BigDecimal("500000000.00"))).isEqualTo(BalanceTier.HIGH);
     }
+
+    @Test
+    @DisplayName(
+            "constructor rejects invalid thresholds where mediumThreshold <= 0 or highThreshold <="
+                    + " mediumThreshold")
+    void constructor_shouldRejectInvalidThresholds() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () ->
+                                new BalanceTierPolicy(
+                                        new BalanceTierProperties(
+                                                BigDecimal.ZERO, new BigDecimal("100000000.00"))))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () ->
+                                new BalanceTierPolicy(
+                                        new BalanceTierProperties(
+                                                new BigDecimal("100000000.00"),
+                                                new BigDecimal("10000000.00"))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

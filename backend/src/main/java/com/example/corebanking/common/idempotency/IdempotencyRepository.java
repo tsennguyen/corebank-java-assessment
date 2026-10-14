@@ -19,9 +19,11 @@ public interface IdempotencyRepository extends JpaRepository<IdempotencyKey, Ide
     Optional<IdempotencyKey> findByIdForUpdate(@Param("id") IdempotencyKeyId id);
 
     @Query(
-            value = "SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtext(:lockKey))) t",
+            value =
+                    "SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtext(:scope),"
+                            + " hashtext(:lockKey))) t",
             nativeQuery = true)
-    Integer acquireAdvisoryLock(@Param("lockKey") String lockKey);
+    Integer acquireAdvisoryLock(@Param("scope") String scope, @Param("lockKey") String lockKey);
 
     @Modifying
     @Query("DELETE FROM IdempotencyKey k WHERE k.expiresAt < :now")

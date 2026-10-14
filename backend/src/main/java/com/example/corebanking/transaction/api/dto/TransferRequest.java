@@ -30,7 +30,7 @@ public record TransferRequest(
                 @NotNull(message = "Amount is required")
                 @DecimalMin(value = "0.01", message = "Amount must be strictly positive")
                 @Digits(
-                        integer = 15,
+                        integer = 17,
                         fraction = 2,
                         message = "Amount cannot have more than 2 decimal places")
                 BigDecimal amount,

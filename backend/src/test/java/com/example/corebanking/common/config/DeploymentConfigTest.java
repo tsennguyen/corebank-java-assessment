@@ -73,8 +73,12 @@ class DeploymentConfigTest {
                 .contains("${DATABASE_URL:${SPRING_DATASOURCE_URL}}")
                 .contains("maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}")
                 .contains("connection-timeout: 5000")
-                .contains("lock_timeout=3000")
-                .contains("classpath:db/migration,classpath:db/seed");
+                .doesNotContain("options: \"-c lock_timeout=3000\"")
+                .contains("${FLYWAY_LOCATIONS:classpath:db/migration}");
+
+        ClassPathResource baseConfig = new ClassPathResource("application.yml");
+        String baseYaml = baseConfig.getContentAsString(StandardCharsets.UTF_8);
+        assertThat(baseYaml).contains("SET lock_timeout = '3s'");
     }
 
     private static Path resolveBackendFile(String relativePath) {

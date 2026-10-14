@@ -79,7 +79,7 @@ public class Customer extends BaseEntity {
         this.email = email;
         this.phone = phone;
         this.address = address;
-        this.location = location;
+        this.location = location != null ? location.trim() : null;
         this.dateOfBirth = dateOfBirth;
         this.version = 0L;
     }
@@ -102,7 +102,7 @@ public class Customer extends BaseEntity {
         this.email = email;
         this.phone = phone;
         this.address = address;
-        this.location = Objects.requireNonNull(location, "location must not be null");
+        this.location = Objects.requireNonNull(location, "location must not be null").trim();
         this.dateOfBirth = dateOfBirth;
     }
 

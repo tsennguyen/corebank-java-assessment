@@ -296,6 +296,11 @@ public class TransactionController {
                     ErrorCode.IDEMPOTENCY_KEY_MISSING,
                     "Required header 'Idempotency-Key' is missing or blank");
         }
+        if (idempotencyKey.trim().length() > 128) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Header 'Idempotency-Key' must not exceed 128 characters");
+        }
     }
 
     @GetMapping("/{id}")
@@ -373,7 +378,8 @@ public class TransactionController {
         @ApiResponse(
                 responseCode = "422",
                 description =
-                        "Tài khoản nhận không đủ số dư để hoàn lại tiền (INSUFFICIENT_BALANCE)",
+                        "Tài khoản không ở trạng thái hoạt động (ACCOUNT_NOT_ACTIVE) hoặc không đủ"
+                                + " số dư để hoàn lại tiền (INSUFFICIENT_BALANCE)",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<TransactionResponse> reverseTransaction(
