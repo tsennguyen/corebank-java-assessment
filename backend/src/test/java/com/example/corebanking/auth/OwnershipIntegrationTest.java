@@ -76,16 +76,16 @@ class OwnershipIntegrationTest extends IntegrationTestBase {
                         .single();
         Long accountBinhId =
                 jdbcClient
-                        .sql("SELECT id FROM core.account WHERE account_number = '100800000034'")
+                        .sql("SELECT id FROM core.account WHERE account_number = '100800000026'")
                         .query(Long.class)
                         .single();
 
         // 1. AC 1: GET /api/v1/me returns Customer A's own profile with masked nationalId
         mockMvc.perform(get("/api/v1/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAn))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.customerCode").value("CUS800001"))
+                .andExpect(jsonPath("$.customerCode").value("CUS8000001"))
                 .andExpect(jsonPath("$.fullName").value("Nguyễn Văn An"))
-                .andExpect(jsonPath("$.nationalId").value("*********101"));
+                .andExpect(jsonPath("$.nationalId").value("*********001"));
 
         // Admin calling /api/v1/me or /api/v1/me/accounts receives 403 ACCESS_DENIED
         mockMvc.perform(get("/api/v1/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
@@ -97,14 +97,20 @@ class OwnershipIntegrationTest extends IntegrationTestBase {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
-        // 2. AC 2: GET /api/v1/me/accounts returns only Customer A's 2 accounts, never Customer B's
+        // 2. AC 2: GET /api/v1/me/accounts returns only Customer A's accounts, never Customer B's
         mockMvc.perform(
                         get("/api/v1/me/accounts")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAn))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$", hasSize(2)))
-                .andExpect(jsonPath("$[0].accountNumber").value("100800000026"))
-                .andExpect(jsonPath("$[1].accountNumber").value("100800000018"));
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].accountNumber").value("100800000018"));
+
+        mockMvc.perform(
+                        get("/api/v1/me/accounts")
+                                .param("status", "FROZEN")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAn))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
 
         // 3. AC 3: Customer A can view own account & transactions, but gets 403 on Customer B's
         mockMvc.perform(
@@ -136,32 +142,40 @@ class OwnershipIntegrationTest extends IntegrationTestBase {
         Long txAnToBinhId =
                 jdbcClient
                         .sql(
-                                "SELECT id FROM core.transaction WHERE reference_no ="
-                                        + " 'TXN-SEED-000004'")
+                                "INSERT INTO core.transaction (reference_no, type,"
+                                    + " source_account_id, target_account_id, amount, fee,"
+                                    + " source_balance_after, target_balance_after,"
+                                    + " system_balance_delta, location, description, status,"
+                                    + " created_by, created_at) VALUES ('TXN-TEST-AN-BINH',"
+                                    + " 'TRANSFER', :srcId, :tgtId, 100000.00, 0.00, 3400000.00,"
+                                    + " 7300000.00, 0.00, 'Hà Nội', 'Chuyển khoản An sang Bình',"
+                                    + " 'COMPLETED', 'admin', CURRENT_TIMESTAMP) RETURNING id")
+                        .param("srcId", accountAnId)
+                        .param("tgtId", accountBinhId)
                         .query(Long.class)
                         .single();
         Long txBinhOnlyId =
                 jdbcClient
                         .sql(
                                 "SELECT id FROM core.transaction WHERE reference_no ="
-                                        + " 'TXN-SEED-000003'")
+                                        + " 'TXN-SEED-0011'")
                         .query(Long.class)
                         .single();
 
-        // Both An (source) and Binh (target) can access the transfer TXN-SEED-000004
+        // Both An (source) and Binh (target) can access the transfer TXN-TEST-AN-BINH
         mockMvc.perform(
                         get("/api/v1/transactions/" + txAnToBinhId)
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAn))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.referenceNo").value("TXN-SEED-000004"));
+                .andExpect(jsonPath("$.referenceNo").value("TXN-TEST-AN-BINH"));
 
         mockMvc.perform(
                         get("/api/v1/transactions/" + txAnToBinhId)
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenBinh))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.referenceNo").value("TXN-SEED-000004"));
+                .andExpect(jsonPath("$.referenceNo").value("TXN-TEST-AN-BINH"));
 
-        // An cannot access Binh's private deposit TXN-SEED-000003 -> 403 ACCESS_DENIED
+        // An cannot access Binh's private payment TXN-SEED-0011 -> 403 ACCESS_DENIED
         mockMvc.perform(
                         get("/api/v1/transactions/" + txBinhOnlyId)
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAn))
@@ -177,13 +191,12 @@ class OwnershipIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
         // An calling GET /api/v1/transactions without accountId gets only transactions of An's
-        // accounts (TXN-SEED-000001, 000002, 000004, 000005 = 4 transactions, excluding 000003 &
-        // 000006)
+        // account (TXN-SEED-0007, TXN-SEED-0010, and TXN-TEST-AN-BINH = 3 transactions)
         mockMvc.perform(
                         get("/api/v1/transactions")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAn))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.totalElements").value(4));
+                .andExpect(jsonPath("$.totalElements").value(3));
 
         // 5. AC 5: Admin can access all accounts and transactions; Customer gets 403 on
         // GET /api/v1/accounts and write endpoints
