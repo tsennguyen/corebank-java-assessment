@@ -273,6 +273,14 @@ class FlywayMigrationIT extends IntegrationTestBase {
                         .contains("INCLUDE (amount)")
                         .contains("COMPLETED");
             }
+
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core'"
+                                    + " AND indexname = 'idx_customer_location'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("indexdef")).containsIgnoringCase("COALESCE");
+            }
         }
     }
 }

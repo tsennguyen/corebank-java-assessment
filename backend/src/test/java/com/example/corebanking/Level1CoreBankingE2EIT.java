@@ -376,8 +376,28 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                 .andExpect(jsonPath("$.code").value("IMMUTABLE_FIELD"));
 
         // =========================================================================
-        // 5. Verify SQL Statistics Endpoints (L1-09, L1-10)
+        // 5. Verify SQL Statistics & Search HTTP Endpoints (L1-01..L1-03, L1-09, L1-10)
         // =========================================================================
+        mockMvc.perform(get("/api/v1/customers").param("location", "Pleiku"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray());
+
+        mockMvc.perform(get("/api/v1/accounts").param("customerId", String.valueOf(customerAId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].id").value(accountAId));
+
+        mockMvc.perform(get("/api/v1/accounts/{id}/transactions", accountAId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+
+        mockMvc.perform(get("/api/v1/statistics/balance-tiers"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3));
+
+        mockMvc.perform(get("/api/v1/statistics/customers-by-location"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].customerCount").isNumber());
+
         // Account A is HIGH (119,994,000 VND) with 2 tx (deposit + transfer)
         // Account B is MEDIUM (30,000,000 VND) with 1 tx (incoming transfer)
         Map<BalanceTier, BalanceTierStatisticResponse> afterTiers =
@@ -425,6 +445,16 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
         mockMvc.perform(get("/api/v1/accounts/{id}", accountBId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.balance").value(0.00));
+
+        // Verify that after reversing the transfer, HIGH tier transactionCount drops back to +1
+        // (only the initial COMPLETED deposit on Account A is counted; REVERSED transfer & REVERSAL
+        // entry are excluded)
+        Map<BalanceTier, BalanceTierStatisticResponse> tiersAfterReversal =
+                statisticsService.getBalanceTierStatistics().stream()
+                        .collect(
+                                Collectors.toMap(BalanceTierStatisticResponse::tier, item -> item));
+        assertThat(tiersAfterReversal.get(BalanceTier.HIGH).transactionCount())
+                .isEqualTo(baselineTiers.get(BalanceTier.HIGH).transactionCount() + 1L);
 
         // Close Account B now that balance is 0.00 -> 204 No Content
         mockMvc.perform(delete("/api/v1/accounts/{id}", accountBId))

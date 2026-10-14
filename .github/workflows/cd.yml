@@ -9,6 +9,7 @@ on:
     paths:
       - 'backend/Dockerfile'
       - 'backend/.dockerignore'
+      - 'backend/pom.xml'
       - 'backend/src/main/resources/application*.yml'
       - 'backend/src/main/resources/db/**'
       - 'docker-compose.yml'

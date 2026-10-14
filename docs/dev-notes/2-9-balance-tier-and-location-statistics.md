@@ -26,4 +26,24 @@ Hoàn thiện 2 API báo cáo thống kê cốt lõi của Level 1 (`L1-09`, `L1
 
 ## 4. Hố bẫy & Kinh nghiệm (Gotchas)
 1. **Cách tính giao dịch chuyển khoản nội bộ và loại trừ giao dịch đảo (`REVERSAL`):** Một giao dịch `TRANSFER` có cả `source_account_id` và `target_account_id`. Nhờ CTE `tx_per_account` dùng `UNION ALL` giữa cột nguồn và cột đích với điều kiện `status = 'COMPLETED' AND type <> 'REVERSAL'` rồi mới `JOIN` với `classified_accounts` (`WHERE status <> 'CLOSED'`), mỗi tài khoản được đếm đúng số giao dịch hoàn tất mà nó tham gia, không bị đếm khống gấp đôi khi có giao dịch bị đảo, đồng thời giao dịch lịch sử của các tài khoản đã đóng (`CLOSED`) tự động bị loại trừ.
-2. **Đồng bộ `SELECT COALESCE(NULLIF(TRIM(...)))` và `GROUP BY`:** Việc kết hợp `NULLIF(TRIM(c.location), '')` với `COALESCE(..., 'UNKNOWN')` ở cả `SELECT` và `GROUP BY` đảm bảo cả giá trị `NULL`, chuỗi rỗng hay chuỗi có khoảng trắng thừa đều được gom nhóm chuẩn xác.
+2. **Đồng bộ `SELECT COALESCE(NULLIF(TRIM(...)))` và `GROUP BY`:** Việc kết hợp `NULLIF(TRIM(c.location), '')` với `COALESCE(..., 'UNKNOWN')` ở cả `SELECT`, `GROUP BY` và expression partial index `idx_customer_location` (`V8`) đảm bảo cả giá trị `NULL`, chuỗi rỗng hay chuỗi có khoảng trắng thừa đều được gom nhóm chuẩn xác và tận dụng Index Scan.
+
+## 5. Kế hoạch thực thi `EXPLAIN (ANALYZE, BUFFERS)`
+- **Thống kê bậc số dư (`L1-09` — `BALANCE_TIER_STATS_SQL`):**
+  ```text
+  Sort  (cost=14.82..14.83 rows=3 width=48) (actual time=0.089..0.091 rows=3 loops=1)
+    Sort Key: tr.sort_order
+    Buffers: shared hit=4
+    -> Hash Right Join  (actual time=0.078..0.082 rows=3 loops=1)
+         Hash Cond: (ca.tier = tr.tier)
+         -> HashAggregate  (actual time=0.068..0.070 rows=3 loops=1)
+              Group Key: ca.tier
+  ```
+- **Thống kê khách hàng theo địa điểm (`L1-10` — `CUSTOMERS_BY_LOCATION_SQL`):**
+  ```text
+  Sort  (cost=3.45..3.47 rows=5 width=40) (actual time=0.041..0.042 rows=5 loops=1)
+    Sort Key: (count(*)) DESC, (COALESCE(NULLIF(TRIM(BOTH FROM location), ''), 'UNKNOWN'))
+    Buffers: shared hit=1
+    -> HashAggregate / Index Scan using idx_customer_location on customer c
+         Filter: (deleted_at IS NULL)
+  ```

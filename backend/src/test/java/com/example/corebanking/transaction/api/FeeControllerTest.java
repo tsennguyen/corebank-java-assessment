@@ -123,7 +123,9 @@ class FeeControllerTest {
                                 .param("type", "UNKNOWN_TYPE")
                                 .param("amount", "500000.00"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("type"))
+                .andExpect(jsonPath("$.errors[0].message").value("Invalid value for field 'type'"));
     }
 
     @Test

@@ -81,7 +81,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
             String message =
                     fieldError.isBindingFailure()
-                            ? "Invalid format for field '" + fieldError.getField() + "'"
+                            ? "Invalid value for field '" + fieldError.getField() + "'"
                             : fieldError.getDefaultMessage();
             validationErrors.add(new ValidationError(fieldError.getField(), message));
         }
@@ -291,7 +291,10 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         ErrorCode errorCode = ErrorCode.DUPLICATE_RESOURCE;
         String detailMessage =
                 "Data integrity constraint violated: resource or unique field already exists.";
-        if ("22001".equals(sqlState) || "22003".equals(sqlState) || "23514".equals(sqlState)) {
+        if ("22001".equals(sqlState)
+                || "22003".equals(sqlState)
+                || "23502".equals(sqlState)
+                || "23514".equals(sqlState)) {
             errorCode = ErrorCode.VALIDATION_FAILED;
             detailMessage = "Data constraint or value range violation in request payload.";
         }
