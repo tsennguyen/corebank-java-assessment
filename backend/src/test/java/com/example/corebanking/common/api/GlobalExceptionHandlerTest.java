@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.config.ClockConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.DuplicateResourceException;
@@ -24,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,8 +38,10 @@ import org.springframework.web.bind.annotation.RestController;
     GlobalExceptionHandlerTest.TestErrorController.class,
     GlobalExceptionHandler.class,
     RequestIdFilter.class,
-    ClockConfig.class
+    ClockConfig.class,
+    SecurityConfig.class
 })
+@WithMockUser(roles = "ADMIN")
 class GlobalExceptionHandlerTest {
 
     @Autowired private MockMvc mockMvc;

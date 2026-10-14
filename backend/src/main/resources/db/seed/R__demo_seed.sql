@@ -92,3 +92,15 @@ BEGIN
     PERFORM setval('core.account_number_seq', GREATEST((SELECT last_value FROM core.account_number_seq), 12), true);
 END $$;
 
+-- 5. Seed synthetic CUSTOMER login accounts (default demo password: Customer@123 hashed with BCrypt strength 10)
+INSERT INTO core.app_user (
+    username, password_hash, role, customer_id, enabled, created_at
+)
+SELECT v.username, v.password_hash, 'CUSTOMER', c.id, TRUE, v.created_at
+FROM (
+    VALUES
+        ('cust.an', '$2a$10$3CQZNBArpgzgErJJdek7LuIOynWuxt9ELxJSkKVk6gxjvlQXNhMty', 'CUS8000001', CURRENT_TIMESTAMP - INTERVAL '340 days'),
+        ('cust.binh', '$2a$10$3CQZNBArpgzgErJJdek7LuIOynWuxt9ELxJSkKVk6gxjvlQXNhMty', 'CUS8000002', CURRENT_TIMESTAMP - INTERVAL '320 days')
+) AS v(username, password_hash, cust_code, created_at)
+JOIN core.customer c ON c.customer_code = v.cust_code
+ON CONFLICT (username) DO NOTHING;

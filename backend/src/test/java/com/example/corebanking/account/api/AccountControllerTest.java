@@ -21,6 +21,7 @@ import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.application.AccountService;
 import com.example.corebanking.account.domain.AccountStatus;
 import com.example.corebanking.account.domain.BalanceTier;
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.PageResponse;
 import com.example.corebanking.common.api.RequestIdFilter;
@@ -41,10 +42,17 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AccountController.class)
-@Import({ClockConfig.class, GlobalExceptionHandler.class, RequestIdFilter.class})
+@Import({
+    ClockConfig.class,
+    GlobalExceptionHandler.class,
+    RequestIdFilter.class,
+    SecurityConfig.class
+})
+@WithMockUser(roles = "ADMIN")
 class AccountControllerTest {
 
     @Autowired private MockMvc mockMvc;

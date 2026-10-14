@@ -26,6 +26,15 @@ spring:
 app:
   business-zone: Asia/Ho_Chi_Minh
   version: "@project.version@"
+  security:
+    jwt:
+      secret: ${JWT_SECRET:corebank-demo-jwt-secret-key-at-least-256-bits-long-2026}
+      access-token-ttl-seconds: ${JWT_ACCESS_TOKEN_TTL_SECONDS:900}
+      issuer: ${JWT_ISSUER:corebank-java-assessment}
+    admin-bootstrap:
+      enabled: ${ADMIN_BOOTSTRAP_ENABLED:true}
+      username: ${ADMIN_BOOTSTRAP_USERNAME:admin}
+      password: ${ADMIN_BOOTSTRAP_PASSWORD:Admin@123}
   idempotency:
     ttl-hours: 24
     cleanup-cron: "0 0 3 * * *"

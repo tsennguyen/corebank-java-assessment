@@ -185,4 +185,33 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V7 app_user migration successfully creating app_user table and"
+                    + " constraints")
+    void flywayMigration_shouldApplyV7AppUserMigrationSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection()) {
+            try (Statement statement = connection.createStatement();
+                    ResultSet rs =
+                            statement.executeQuery(
+                                    "SELECT version, description, type, script, success "
+                                            + "FROM core.flyway_schema_history "
+                                            + "WHERE version = '7'")) {
+                assertThat(rs.next())
+                        .as("Migration version 7 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("version")).isEqualTo("7");
+                assertThat(rs.getString("description")).isEqualTo("app user");
+                assertThat(rs.getString("type")).isEqualTo("SQL");
+                assertThat(rs.getString("script")).isEqualTo("V7__app_user.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    connection.getMetaData().getTables(null, "core", "app_user", null)) {
+                assertThat(rs.next()).as("Table 'app_user' should exist in schema 'core'").isTrue();
+            }
+        }
+    }
 }
