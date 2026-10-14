@@ -56,16 +56,24 @@ jobs:
           echo "Container user: $WHOAMI"
           test "$WHOAMI" = "appuser"
 
-      - name: Verify Swagger OpenAPI docs and seeded Level 1 statistics
+      - name: Verify Swagger OpenAPI docs, JWT authentication, and seeded Level 1 statistics
         run: |
           curl -fsS http://localhost:8080/v3/api-docs | grep -q '"openapi"'
           curl -fsS http://localhost:8080/swagger-ui/index.html | grep -q 'Swagger UI'
-          TIERS=$(curl -fsS http://localhost:8080/api/v1/statistics/balance-tiers)
+          UNAUTH_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/v1/statistics/balance-tiers)
+          echo "Unauthenticated statistics status: $UNAUTH_STATUS"
+          test "$UNAUTH_STATUS" = "401"
+          LOGIN_RESPONSE=$(curl -fsS -X POST http://localhost:8080/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"Admin@123"}')
+          ADMIN_TOKEN=$(echo "$LOGIN_RESPONSE" | jq -r '.accessToken')
+          test -n "$ADMIN_TOKEN" && test "$ADMIN_TOKEN" != "null"
+          TIERS=$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/api/v1/statistics/balance-tiers)
           echo "Balance tiers response: $TIERS"
           echo "$TIERS" | grep -q '"tier":"LOW"'
           echo "$TIERS" | grep -q '"tier":"MEDIUM"'
           echo "$TIERS" | grep -q '"tier":"HIGH"'
-          LOCATIONS=$(curl -fsS http://localhost:8080/api/v1/statistics/customers-by-location)
+          LOCATIONS=$(curl -fsS -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/api/v1/statistics/customers-by-location)
           echo "Locations response: $LOCATIONS"
           echo "$LOCATIONS" | grep -q '"customerCount"'
 

@@ -116,7 +116,7 @@ public class TransactionService {
         if (idempotencyService != null) {
             return idempotencyService.execute(
                     idempotencyKey,
-                    "DEFAULT",
+                    resolveCurrentScope(),
                     "POST",
                     "/api/v1/transactions/deposits",
                     request,
@@ -195,7 +195,7 @@ public class TransactionService {
         if (idempotencyService != null) {
             return idempotencyService.execute(
                     idempotencyKey,
-                    "DEFAULT",
+                    resolveCurrentScope(),
                     "POST",
                     "/api/v1/transactions/withdrawals",
                     request,
@@ -285,7 +285,7 @@ public class TransactionService {
         if (idempotencyService != null) {
             return idempotencyService.execute(
                     idempotencyKey,
-                    "DEFAULT",
+                    resolveCurrentScope(),
                     "POST",
                     "/api/v1/transactions/transfers",
                     request,
@@ -392,7 +392,7 @@ public class TransactionService {
         if (idempotencyService != null) {
             return idempotencyService.execute(
                     idempotencyKey,
-                    "DEFAULT",
+                    resolveCurrentScope(),
                     "POST",
                     "/api/v1/transactions/payments",
                     request,
@@ -748,5 +748,19 @@ public class TransactionService {
                                 + ALLOWED_SORT_FIELDS);
             }
         }
+    }
+
+    static String resolveCurrentScope() {
+        org.springframework.security.core.Authentication auth =
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .getAuthentication();
+        if (auth != null
+                && auth.isAuthenticated()
+                && auth.getName() != null
+                && !auth.getName().isBlank()
+                && !"anonymousUser".equals(auth.getName())) {
+            return auth.getName().trim();
+        }
+        return "DEFAULT";
     }
 }

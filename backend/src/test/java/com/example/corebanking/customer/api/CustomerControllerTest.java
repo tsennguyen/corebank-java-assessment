@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.PageResponse;
 import com.example.corebanking.common.api.RequestIdFilter;
@@ -39,10 +40,17 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(CustomerController.class)
-@Import({ClockConfig.class, GlobalExceptionHandler.class, RequestIdFilter.class})
+@Import({
+    ClockConfig.class,
+    GlobalExceptionHandler.class,
+    RequestIdFilter.class,
+    SecurityConfig.class
+})
+@WithMockUser(roles = "ADMIN")
 class CustomerControllerTest {
 
     @Autowired private MockMvc mockMvc;

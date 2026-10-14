@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.config.ClockConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.DuplicateResourceException;
@@ -24,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,8 +38,10 @@ import org.springframework.web.bind.annotation.RestController;
     GlobalExceptionHandlerTest.TestErrorController.class,
     GlobalExceptionHandler.class,
     RequestIdFilter.class,
-    ClockConfig.class
+    ClockConfig.class,
+    SecurityConfig.class
 })
+@WithMockUser(roles = "ADMIN")
 class GlobalExceptionHandlerTest {
 
     @Autowired private MockMvc mockMvc;
@@ -182,6 +186,28 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.requestId").value(customId));
     }
 
+    @Test
+    @DisplayName(
+            "should return 403 ProblemDetail with ACCESS_DENIED on AccessDeniedException and 401"
+                    + " UNAUTHORIZED with WWW-Authenticate on AuthenticationException")
+    void securityExceptions_return403And401ProblemDetail() throws Exception {
+        mockMvc.perform(get("/api/v1/test-errors/access-denied"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+
+        mockMvc.perform(get("/api/v1/test-errors/auth-failed"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(
+                        header().string(
+                                        org.springframework.http.HttpHeaders.WWW_AUTHENTICATE,
+                                        "Bearer"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+    }
+
     @RestController
     @RequestMapping("/api/v1/test-errors")
     static class TestErrorController {
@@ -216,6 +242,17 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/internal-error")
         public String testInternalError() {
             throw new RuntimeException("Sensitive database stack trace details");
+        }
+
+        @GetMapping("/access-denied")
+        public String testAccessDenied() {
+            throw new org.springframework.security.access.AccessDeniedException("Forbidden");
+        }
+
+        @GetMapping("/auth-failed")
+        public String testAuthFailed() {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "Invalid token");
         }
     }
 

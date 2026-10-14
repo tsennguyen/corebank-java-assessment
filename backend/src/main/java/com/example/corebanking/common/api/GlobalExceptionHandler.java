@@ -300,6 +300,52 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(status).body(problemDetail);
     }
 
+    /** Handles Spring Security method-level access denied exceptions (403 ACCESS_DENIED). */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleAccessDeniedException(
+            org.springframework.security.access.AccessDeniedException ex, WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        ErrorCode errorCode = ErrorCode.ACCESS_DENIED;
+        HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        status, "You do not have permission to access this resource");
+        problemDetail.setTitle(errorCode.getDefaultTitle());
+        problemDetail.setType(URI.create(errorCode.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, errorCode.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+
+        log.warn("Access denied [requestId={}]: {}", requestId, ex.getMessage());
+        return ResponseEntity.status(status).body(problemDetail);
+    }
+
+    /** Handles Spring Security authentication exceptions (401 UNAUTHORIZED). */
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<ProblemDetail> handleAuthenticationException(
+            org.springframework.security.core.AuthenticationException ex, WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        ErrorCode errorCode = ErrorCode.UNAUTHORIZED;
+        HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        status, "Authentication is required to access this resource");
+        problemDetail.setTitle(errorCode.getDefaultTitle());
+        problemDetail.setType(URI.create(errorCode.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, errorCode.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+
+        log.warn("Authentication failed [requestId={}]: {}", requestId, ex.getMessage());
+        return ResponseEntity.status(status)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
+                .body(problemDetail);
+    }
+
     /** Catches and secures all unexpected exceptions, preventing stack trace leaks. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetail> handleAllUncaughtExceptions(

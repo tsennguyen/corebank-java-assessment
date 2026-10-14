@@ -76,6 +76,11 @@ public class OpenApiConfig {
                 .tags(
                         List.of(
                                 new Tag()
+                                        .name("Authentication")
+                                        .description(
+                                                "Xác thực người dùng và phát hành JWT Access Token"
+                                                        + " (HS256)"),
+                                new Tag()
                                         .name("Customer")
                                         .description("Quản lý thông tin và hồ sơ khách hàng"),
                                 new Tag()
