@@ -1,0 +1,26 @@
+# Render Blueprint (Infrastructure-as-Code) for Cloud Staging / Production (NC-10)
+services:
+  - type: web
+    name: corebank-api
+    runtime: docker
+    region: singapore
+    plan: free
+    branch: prod
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
+      - key: PORT
+        value: "8080"
+      - key: JAVA_TOOL_OPTIONS
+        value: "-XX:MaxRAMPercentage=75.0 -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Djava.awt.headless=true"
+      - key: HIKARI_MAX_POOL_SIZE
+        value: "5"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USER
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false

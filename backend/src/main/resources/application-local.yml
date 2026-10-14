@@ -1,7 +1,7 @@
 spring:
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/core_banking}
-    username: ${SPRING_DATASOURCE_USERNAME:mybi}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:}
     driver-class-name: org.postgresql.Driver
     hikari:
@@ -10,4 +10,5 @@ spring:
   jpa:
     show-sql: false
   flyway:
-    enabled: false
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration,classpath:db/seed

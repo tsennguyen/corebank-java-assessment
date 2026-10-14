@@ -1,0 +1,26 @@
+# Dev Note 2.3: Deposit and Transaction Query
+
+- **Tóm tắt:** Xây dựng tính năng nạp tiền vào tài khoản và truy vấn lịch sử giao dịch: khóa bi quan chống race condition, mô hình giàu hành vi (Rich Domain Model), lưu vết kiểm toán số dư sau biến động, cơ chế lock timeout chống tắc nghẽn connection, phân trang ổn định (deterministic paging) và đảm bảo ranh giới module một chiều không phụ thuộc vòng. Mã yêu cầu: `L1-01`, `L1-03`, `L1-06`. PR: #10 (nhánh `feat/2-3-deposit-and-transaction-query`).
+- **Đã làm gì:**
+  - Viết Flyway migration `V4__transaction.sql` tạo bảng `core.transaction` kèm ràng buộc toàn vẹn `CHECK (amount > 0)`, `CHECK (fee >= 0)` và các composite index tối ưu: `(source_account_id, created_at DESC)`, `(target_account_id, created_at DESC)`, `(created_at DESC)`, `(type, created_at DESC)`. (Loại bỏ index thừa `idx_tx_reference_no` do cột đã có ràng buộc `UNIQUE`).
+  - Bổ sung phương thức `findByIdForUpdate` với khóa bi quan `@Lock(LockModeType.PESSIMISTIC_WRITE)` vào `AccountRepository`. Cấu hình timeout 3s ở cấp session connection qua HikariCP `SET lock_timeout = '3s'` trong `application.yml`.
+  - Bổ sung exception handler cho `PessimisticLockingFailureException` (gồm `CannotAcquireLockException`) trong `GlobalExceptionHandler` trả về RFC 9457 ProblemDetail với HTTP 409 `LOCK_TIMEOUT` và `requestId`.
+  - Triển khai phương thức nghiệp vụ giàu tính đóng gói `Account.credit(Money amount)` bảo vệ tính bất biến của số dư, từ chối nạp tiền vào tài khoản không ở trạng thái `ACTIVE`.
+  - Xây dựng domain entity `Transaction`, enum `TransactionType` và `TransactionStatus`.
+  - Xây dựng `TransactionReferenceGenerator` sinh mã định danh duy nhất ngẫu nhiên có tiền tố ngày (`TXN-YYYYMMDD-...`).
+  - Triển khai `TransactionService` thực hiện nạp tiền nguyên tử trong `@Transactional`, ghi nhận `targetBalanceAfter` và `systemBalanceDelta` phục vụ kiểm toán; hỗ trợ phân trang ổn định tự động bù khóa phụ `id DESC`.
+  - Xây dựng `TransactionController` (`POST /deposits`, `GET /{id}`, `GET /`) và `AccountTransactionController` (`GET /api/v1/accounts/{id}/transactions`) thuộc package `transaction.api`, đảm bảo package `account` hoàn toàn độc lập, không import từ `transaction`.
+  - Viết test suite toàn diện: unit tests, WebMvc tests (RFC 9457 ProblemDetail), architecture tests và integration tests (`DepositConcurrencyIT`, `LockTimeoutIT`).
+- **Vì sao làm vậy:** Khóa bi quan (`SELECT ... FOR UPDATE`) là bắt buộc đối với các biến động số dư tài khoản ngân hàng để loại trừ hoàn toàn nguy cơ mất mát cập nhật (lost update) khi có nhiều giao dịch diễn ra đồng thời. Đồng thời cấu hình lock timeout 3s để ngăn ngừa hiện tượng treo luồng/cạn kiệt pool kết nối (connection starvation) khi có tranh chấp kéo dài.
+- **Phương án khác đã cân nhắc:**
+  - Dùng khóa lạc quan (`@Version`): Với tài khoản có mật độ giao dịch cao ("tài khoản nóng"), khóa lạc quan sẽ gây ra tỉ lệ retry rất lớn làm giảm trải nghiệm người dùng và tăng áp lực lên database.
+  - Dùng `@QueryHints({@QueryHint("jakarta.persistence.lock.timeout", "3000")})`: PostgreSQL không có cú pháp SQL `FOR UPDATE WAIT <n>` nên Hibernate bỏ qua timeout dạng số đối với PostgreSQL dialect. Giải pháp chuẩn xác là thiết lập session GUC `lock_timeout = '3s'` trên HikariCP connection init.
+  - Đặt `GET /api/v1/accounts/{id}/transactions` trong `AccountController`: Gây phụ thuộc vòng (circular dependency) giữa hai package `account` và `transaction`. Việc tách sang `AccountTransactionController` trong package `transaction.api` giữ kiến trúc phân tầng một chiều sạch sẽ (`transaction` -> `account`).
+- **Bẫy cần nhớ:**
+  - Hibernate bỏ qua JPA lock timeout > 0 trên PostgreSQL dialect; luôn phải cấu hình `lock_timeout` ở tầng session/connection JDBC.
+  - Phân trang theo thời gian (`createdAt DESC`) cần có khóa phụ duy nhất (`id DESC`) để đảm bảo tính ổn định (deterministic paging), tránh hiện tượng bản ghi bị lặp hoặc bị nuốt giữa các trang khi nhiều giao dịch được ghi trong cùng một mili-giây.
+  - Tiền tệ luôn sử dụng value object `Money` và kiểu dữ liệu `BigDecimal` scale 2 với `RoundingMode.HALF_UP`.
+  - Bảng `core.transaction` sử dụng từ khóa non-reserved `transaction` trong PostgreSQL nên luôn chỉ định rõ schema: `@Table(name = "transaction", schema = "core")`.
+- **Cách chạy/test:**
+  - Unit & WebMvc tests: `./mvnw test -Dtest=TransactionTest,TransactionServiceTest,TransactionControllerTest,AccountTransactionControllerTest,AccountControllerTest,AccountTest,GlobalExceptionHandlerTest,ModuleDependencyArchitectureTest`
+  - Integration tests (Docker/CI): `./mvnw test -Dtest=FlywayMigrationIT,DepositConcurrencyIT,LockTimeoutIT`

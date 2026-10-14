@@ -1,22 +1,70 @@
 spring:
   application:
     name: core-banking
-  profiles:
-    active: local
   threads:
     virtual:
       enabled: true
+  mvc:
+    problemdetails:
+      enabled: true
+  datasource:
+    hikari:
+      connection-init-sql: "SET lock_timeout = '3s'"
   jpa:
     open-in-view: false
+    hibernate:
+      ddl-auto: validate
     properties:
       hibernate:
         default_schema: core
-        jdbc:
-          batch_size: 25
   flyway:
     enabled: true
     schemas: core
     default-schema: core
+    locations: classpath:db/migration
+
+app:
+  business-zone: Asia/Ho_Chi_Minh
+  version: "@project.version@"
+  idempotency:
+    ttl-hours: 24
+    cleanup-cron: "0 0 3 * * *"
+  statistics:
+    balance-tiers:
+      medium-threshold: 10000000.00
+      high-threshold: 100000000.00
+  fees:
+    withdrawal:
+      - min-amount: 0.00
+        flat-fee: 2000.00
+      - min-amount: 10000000.00
+        rate-percent: 0.02
+        max-fee: 50000.00
+    transfer:
+      - min-amount: 0.00
+        flat-fee: 0.00
+      - min-amount: 500000.00
+        flat-fee: 2000.00
+      - min-amount: 10000000.00
+        rate-percent: 0.02
+        max-fee: 50000.00
+    deposit:
+      - min-amount: 0.00
+        flat-fee: 0.00
+    payment:
+      - min-amount: 0.00
+        flat-fee: 0.00
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+    doc-expansion: none
 
 server:
   port: 8080
@@ -26,7 +74,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics,prometheus
+        include: health,info
   endpoint:
     health:
       show-details: when_authorized
