@@ -148,7 +148,7 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                         }
                                         """))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.errorCode").value("OPTIMISTIC_LOCK_CONFLICT"));
+                .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
 
         // =========================================================================
         // 2. Account Opening, Luhn Check & Limit Update (L1-02, L1-05)
@@ -226,7 +226,7 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                 .param("type", "TRANSFER")
                                 .param("amount", "30000000.00"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.fee").value(2000.00));
+                .andExpect(jsonPath("$.fee").value(6000.00));
 
         String depositIdempKey = "e2e-dep-" + UUID.randomUUID();
         String depositPayload =
@@ -288,12 +288,12 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                                 """,
                                                 accountAId)))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.errorCode").value("IDEMPOTENCY_KEY_REUSED"));
+                .andExpect(jsonPath("$.code").value("IDEMPOTENCY_KEY_REUSED"));
 
         // =========================================================================
         // 4. Transfer with Tiered Fee, Limit Guard & Metadata Update (L1-03, L1-06, L1-07, L1-08)
         // =========================================================================
-        // Exceeding transactionLimit (130M > 120M) must fail with 422 TRANSACTION_LIMIT_EXCEEDED
+        // Exceeding transactionLimit (130M > 120M) must fail with 422 LIMIT_EXCEEDED
         mockMvc.perform(
                         post("/api/v1/transactions/transfers")
                                 .header("Idempotency-Key", "e2e-trf-limit-" + UUID.randomUUID())
@@ -311,9 +311,9 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                                 """,
                                                 accountAId, accountBId)))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.errorCode").value("TRANSACTION_LIMIT_EXCEEDED"));
+                .andExpect(jsonPath("$.code").value("LIMIT_EXCEEDED"));
 
-        // Valid transfer of 30,000,000 VND (fee = 2,000 VND)
+        // Valid transfer of 30,000,000 VND (0.02% tier fee = 6,000 VND)
         MvcResult transferResult =
                 mockMvc.perform(
                                 post("/api/v1/transactions/transfers")
@@ -334,8 +334,8 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                         .andExpect(status().isCreated())
                         .andExpect(jsonPath("$.type").value("TRANSFER"))
                         .andExpect(jsonPath("$.amount").value(30000000.00))
-                        .andExpect(jsonPath("$.fee").value(2000.00))
-                        .andExpect(jsonPath("$.sourceBalanceAfter").value(119998000.00))
+                        .andExpect(jsonPath("$.fee").value(6000.00))
+                        .andExpect(jsonPath("$.sourceBalanceAfter").value(119994000.00))
                         .andExpect(jsonPath("$.targetBalanceAfter").value(30000000.00))
                         .andReturn();
         long transferTxId =
@@ -371,12 +371,12 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                                         }
                                         """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errorCode").value("IMMUTABLE_FIELD"));
+                .andExpect(jsonPath("$.code").value("IMMUTABLE_FIELD"));
 
         // =========================================================================
         // 5. Verify SQL Statistics Endpoints (L1-09, L1-10)
         // =========================================================================
-        // Account A is HIGH (119,998,000 VND) with 2 tx (deposit + transfer)
+        // Account A is HIGH (119,994,000 VND) with 2 tx (deposit + transfer)
         // Account B is MEDIUM (30,000,000 VND) with 1 tx (incoming transfer)
         Map<BalanceTier, BalanceTierStatisticResponse> afterTiers =
                 statisticsService.getBalanceTierStatistics().stream()
@@ -406,9 +406,9 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
         // Closing Account B while balance is 30M must fail with 409 ACCOUNT_HAS_BALANCE
         mockMvc.perform(delete("/api/v1/accounts/{id}", accountBId))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.errorCode").value("ACCOUNT_HAS_BALANCE"));
+                .andExpect(jsonPath("$.code").value("ACCOUNT_HAS_BALANCE"));
 
-        // Reverse the transfer -> refunds 30M + 2,000 fee to Account A and deducts 30M from Account
+        // Reverse the transfer -> refunds 30M + 6,000 fee to Account A and deducts 30M from Account
         // B
         mockMvc.perform(delete("/api/v1/transactions/{id}", transferTxId))
                 .andExpect(status().isOk())
@@ -466,8 +466,8 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.type").value("WITHDRAWAL"))
                 .andExpect(jsonPath("$.amount").value(500000.00))
-                .andExpect(jsonPath("$.fee").value(0.00))
-                .andExpect(jsonPath("$.sourceBalanceAfter").value(149500000.00));
+                .andExpect(jsonPath("$.fee").value(2000.00))
+                .andExpect(jsonPath("$.sourceBalanceAfter").value(149498000.00));
 
         mockMvc.perform(
                         post("/api/v1/transactions/payments")
@@ -489,7 +489,7 @@ class Level1CoreBankingE2EIT extends IntegrationTestBase {
                 .andExpect(jsonPath("$.type").value("PAYMENT"))
                 .andExpect(jsonPath("$.amount").value(500000.00))
                 .andExpect(jsonPath("$.fee").value(0.00))
-                .andExpect(jsonPath("$.sourceBalanceAfter").value(149000000.00));
+                .andExpect(jsonPath("$.sourceBalanceAfter").value(148998000.00));
     }
 
     private static void assertValidLuhnAccountNumber(String accountNumber) {
