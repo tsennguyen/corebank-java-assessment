@@ -634,7 +634,7 @@ public class TransactionService {
                             "Unsupported transaction type for reversal: " + original.getType());
         }
 
-        transactionRepository.save(original);
+        transactionRepository.saveAndFlush(original);
         Transaction savedReversal = transactionRepository.save(reversal);
 
         eventPublisher.publishEvent(

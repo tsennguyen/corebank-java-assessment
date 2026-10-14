@@ -188,6 +188,34 @@ class FlywayMigrationIT extends IntegrationTestBase {
 
     @Test
     @DisplayName(
+            "Flyway applies V6 idempotency_key migration successfully creating idempotency_key"
+                    + " table")
+    void flywayMigration_shouldApplyV6IdempotencyKeyMigrationSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection()) {
+            try (Statement statement = connection.createStatement();
+                    ResultSet rs =
+                            statement.executeQuery(
+                                    "SELECT version, description, type, script, success "
+                                            + "FROM core.flyway_schema_history "
+                                            + "WHERE version = '6'")) {
+                assertThat(rs.next())
+                        .as("Migration version 6 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script")).isEqualTo("V6__idempotency_key.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    connection.getMetaData().getTables(null, "core", "idempotency_key", null)) {
+                assertThat(rs.next())
+                        .as("Table 'idempotency_key' should exist in schema 'core'")
+                        .isTrue();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName(
             "Flyway applies V7 app_user migration successfully creating app_user table and"
                     + " constraints")
     void flywayMigration_shouldApplyV7AppUserMigrationSuccessfully() throws Exception {
@@ -217,8 +245,8 @@ class FlywayMigrationIT extends IntegrationTestBase {
 
     @Test
     @DisplayName(
-            "Flyway applies V8 optimization migration updating idx_transaction_source_created"
-                    + " partial index")
+            "Flyway applies V8 optimization migration creating"
+                    + " idx_tx_source_completed_created_amount covering index")
     void flywayMigration_shouldApplyV8OptimizationSuccessfully() throws Exception {
         try (Connection connection = dataSource.getConnection();
                 Statement statement = connection.createStatement()) {
@@ -238,9 +266,12 @@ class FlywayMigrationIT extends IntegrationTestBase {
             try (ResultSet rs =
                     statement.executeQuery(
                             "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core'"
-                                    + " AND indexname = 'idx_transaction_source_created'")) {
+                                    + " AND indexname ="
+                                    + " 'idx_tx_source_completed_created_amount'")) {
                 assertThat(rs.next()).isTrue();
-                assertThat(rs.getString("indexdef")).contains("REVERSAL");
+                assertThat(rs.getString("indexdef"))
+                        .contains("INCLUDE (amount)")
+                        .contains("COMPLETED");
             }
         }
     }
