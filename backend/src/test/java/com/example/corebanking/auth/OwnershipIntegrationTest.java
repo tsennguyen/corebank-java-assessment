@@ -107,7 +107,7 @@ class OwnershipIntegrationTest extends IntegrationTestBase {
 
         mockMvc.perform(
                         get("/api/v1/me/accounts")
-                                .param("status", "FROZEN")
+                                .param("status", "LOCKED")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenAn))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(0)));
