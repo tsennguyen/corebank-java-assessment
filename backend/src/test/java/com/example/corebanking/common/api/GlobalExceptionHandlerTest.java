@@ -186,6 +186,28 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.requestId").value(customId));
     }
 
+    @Test
+    @DisplayName(
+            "should return 403 ProblemDetail with ACCESS_DENIED on AccessDeniedException and 401"
+                    + " UNAUTHORIZED with WWW-Authenticate on AuthenticationException")
+    void securityExceptions_return403And401ProblemDetail() throws Exception {
+        mockMvc.perform(get("/api/v1/test-errors/access-denied"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+
+        mockMvc.perform(get("/api/v1/test-errors/auth-failed"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(
+                        header().string(
+                                        org.springframework.http.HttpHeaders.WWW_AUTHENTICATE,
+                                        "Bearer"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+    }
+
     @RestController
     @RequestMapping("/api/v1/test-errors")
     static class TestErrorController {
@@ -220,6 +242,17 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/internal-error")
         public String testInternalError() {
             throw new RuntimeException("Sensitive database stack trace details");
+        }
+
+        @GetMapping("/access-denied")
+        public String testAccessDenied() {
+            throw new org.springframework.security.access.AccessDeniedException("Forbidden");
+        }
+
+        @GetMapping("/auth-failed")
+        public String testAuthFailed() {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "Invalid token");
         }
     }
 

@@ -147,8 +147,40 @@ class AuthServiceTest {
         assertThat(existing.getPasswordHash()).isEqualTo("$2a$10$newAdminHash");
         assertThat(existing.isEnabled()).isTrue();
 
-        // 3. No-op when bootstrap disabled
+        // 3. Throws IllegalStateException if bootstrap username belongs to a CUSTOMER
+        AppUser conflictCustomer = AppUser.createCustomer("admin", "$2a$10$hash", 99L);
+        when(appUserRepository.findByUsername("admin")).thenReturn(Optional.of(conflictCustomer));
+        assertThatThrownBy(() -> runner.run(new DefaultApplicationArguments()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("non-ADMIN role");
+
+        // 4. Throws IllegalStateException if username or password is blank when enabled
+        props.getAdminBootstrap().setPassword("   ");
+        assertThatThrownBy(() -> runner.run(new DefaultApplicationArguments()))
+                .isInstanceOf(IllegalStateException.class);
+
+        // 5. No-op when bootstrap disabled
         props.getAdminBootstrap().setEnabled(false);
         runner.run(new DefaultApplicationArguments());
+    }
+
+    @Test
+    @DisplayName(
+            "login with password exceeding 72 UTF-8 bytes executes dummy BCrypt check and throws"
+                    + " UNAUTHORIZED instead of 500")
+    void login_whenPasswordExceeds72Utf8Bytes_shouldThrowUnauthorized() {
+        String oversizedPassword = "Ẩ".repeat(30); // 30 * 3 UTF-8 bytes = 90 bytes (> 72 bytes)
+        assertThatThrownBy(() -> authService.login(new LoginRequest("admin", oversizedPassword)))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex -> {
+                            BusinessRuleException bre = (BusinessRuleException) ex;
+                            assertThat(bre.getErrorCode()).isEqualTo(ErrorCode.UNAUTHORIZED);
+                            assertThat(bre.getMessage())
+                                    .isEqualTo(AuthService.INVALID_CREDENTIALS_MESSAGE);
+                        });
+
+        verify(passwordEncoder)
+                .matches(eq("oversized-password"), eq(AuthService.DUMMY_BCRYPT_HASH));
     }
 }

@@ -1,6 +1,7 @@
 package com.example.corebanking.auth.application;
 
 import com.example.corebanking.auth.domain.AppUser;
+import com.example.corebanking.auth.domain.Role;
 import com.example.corebanking.auth.infrastructure.AppUserRepository;
 import com.example.corebanking.auth.infrastructure.SecurityProperties;
 import java.util.Optional;
@@ -44,6 +45,14 @@ public class AdminBootstrapRunner implements ApplicationRunner {
             return;
         }
 
+        if (bootstrap.getUsername() == null
+                || bootstrap.getUsername().isBlank()
+                || bootstrap.getPassword() == null
+                || bootstrap.getPassword().isBlank()) {
+            throw new IllegalStateException(
+                    "Admin bootstrap username and password must not be blank when enabled");
+        }
+
         String username = bootstrap.getUsername().trim();
         String rawPassword = bootstrap.getPassword();
 
@@ -56,6 +65,14 @@ public class AdminBootstrapRunner implements ApplicationRunner {
         }
 
         AppUser existing = existingOpt.get();
+        if (existing.getRole() != Role.ADMIN) {
+            throw new IllegalStateException(
+                    "Bootstrap admin username '"
+                            + username
+                            + "' is already assigned to non-ADMIN role "
+                            + existing.getRole());
+        }
+
         boolean updated = false;
         if (!passwordEncoder.matches(rawPassword, existing.getPasswordHash())) {
             existing.updatePasswordHash(passwordEncoder.encode(rawPassword));

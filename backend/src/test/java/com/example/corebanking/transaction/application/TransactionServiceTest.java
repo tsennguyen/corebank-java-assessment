@@ -1094,5 +1094,29 @@ class TransactionServiceTest {
 
             assertThat(orig.getStatus()).isEqualTo(TransactionStatus.COMPLETED); // not modified
         }
+
+        @Test
+        @DisplayName(
+                "resolveCurrentScope returns authenticated principal name or DEFAULT when"
+                        + " unauthenticated (R3-10)")
+        void resolveCurrentScope_shouldReturnPrincipalNameOrDefault() {
+            try {
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
+                assertThat(TransactionService.resolveCurrentScope()).isEqualTo("DEFAULT");
+
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .setAuthentication(
+                                new org.springframework.security.authentication
+                                        .UsernamePasswordAuthenticationToken(
+                                        "admin",
+                                        "N/A",
+                                        java.util.List.of(
+                                                new org.springframework.security.core.authority
+                                                        .SimpleGrantedAuthority("ROLE_ADMIN"))));
+                assertThat(TransactionService.resolveCurrentScope()).isEqualTo("admin");
+            } finally {
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
+            }
+        }
     }
 }

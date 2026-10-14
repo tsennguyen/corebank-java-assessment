@@ -87,7 +87,7 @@ public class IdempotencyService {
         String requestHash = computeRequestHash(method, path, requestPayload);
 
         try {
-            idempotencyRepository.acquireAdvisoryLock(trimmedKey);
+            idempotencyRepository.acquireAdvisoryLock(currentScope + ":" + trimmedKey);
         } catch (Exception e) {
             log.debug("Advisory lock acquisition skipped or unsupported: {}", e.getMessage());
         }

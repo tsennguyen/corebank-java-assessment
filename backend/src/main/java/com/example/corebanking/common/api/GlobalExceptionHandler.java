@@ -341,7 +341,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
 
         log.warn("Authentication failed [requestId={}]: {}", requestId, ex.getMessage());
-        return ResponseEntity.status(status).body(problemDetail);
+        return ResponseEntity.status(status)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
+                .body(problemDetail);
     }
 
     /** Catches and secures all unexpected exceptions, preventing stack trace leaks. */

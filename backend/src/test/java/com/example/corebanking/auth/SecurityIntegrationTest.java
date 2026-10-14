@@ -139,6 +139,23 @@ class SecurityIntegrationTest extends IntegrationTestBase {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
 
+        mockMvc.perform(
+                        post("/api/v1/accounts")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
+        mockMvc.perform(
+                        post("/api/v1/transactions/transfers")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken)
+                                .header("Idempotency-Key", "cust-denied-key")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+
         // 7. CUSTOMER token can call shared authenticated read endpoint GET /api/v1/fees/preview
         mockMvc.perform(
                         get("/api/v1/fees/preview")
@@ -147,11 +164,37 @@ class SecurityIntegrationTest extends IntegrationTestBase {
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + customerToken))
                 .andExpect(status().isOk());
 
-        // 8. ADMIN token can call ADMIN endpoints
+        // 8. ADMIN token can call ADMIN endpoints and records idempotency scope = 'admin' (R3-10)
         mockMvc.perform(
                         get("/api/v1/statistics/balance-tiers")
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
                 .andExpect(status().isOk());
+
+        Long seededAccountId =
+                jdbcClient
+                        .sql("SELECT id FROM core.account WHERE account_number = '100800000018'")
+                        .query(Long.class)
+                        .single();
+        mockMvc.perform(
+                        post("/api/v1/transactions/deposits")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                                .header("Idempotency-Key", "idem-scope-admin-001")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        "{\"accountId\":"
+                                                + seededAccountId
+                                                + ",\"amount\":100000.00,\"location\":\"Hà"
+                                                + " Nội\",\"description\":\"Test scope\"}"))
+                .andExpect(status().isCreated());
+
+        String recordedScope =
+                jdbcClient
+                        .sql(
+                                "SELECT scope FROM core.idempotency_key WHERE idem_key ="
+                                        + " 'idem-scope-admin-001'")
+                        .query(String.class)
+                        .single();
+        assertThat(recordedScope).isEqualTo("admin");
 
         // 9. Database CHECK constraint chk_app_user_customer_link rejects invalid role/customer_id
         assertThatThrownBy(

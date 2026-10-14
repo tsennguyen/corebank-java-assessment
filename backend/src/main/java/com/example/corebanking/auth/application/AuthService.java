@@ -7,6 +7,7 @@ import com.example.corebanking.auth.infrastructure.AppUserRepository;
 import com.example.corebanking.auth.infrastructure.JwtTokenService;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -25,6 +26,7 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     public static final String INVALID_CREDENTIALS_MESSAGE = "Invalid username or password";
+    private static final int MAX_BCRYPT_PASSWORD_BYTES = 72;
 
     /**
      * Precomputed BCrypt strength-10 hash used when a username is not found so that BCrypt
@@ -60,17 +62,24 @@ public class AuthService {
     @Transactional
     public TokenResponse login(LoginRequest request) {
         String normalizedUsername = request.username().trim();
+        String rawPassword = request.password();
+
+        if (rawPassword.getBytes(StandardCharsets.UTF_8).length > MAX_BCRYPT_PASSWORD_BYTES) {
+            passwordEncoder.matches("oversized-password", DUMMY_BCRYPT_HASH);
+            log.warn("Failed login attempt with oversized password for '{}'", normalizedUsername);
+            throw new BusinessRuleException(ErrorCode.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE);
+        }
+
         Optional<AppUser> userOpt = appUserRepository.findByUsername(normalizedUsername);
 
         if (userOpt.isEmpty()) {
-            passwordEncoder.matches(request.password(), DUMMY_BCRYPT_HASH);
+            passwordEncoder.matches(rawPassword, DUMMY_BCRYPT_HASH);
             log.warn("Failed login attempt for unknown username '{}'", normalizedUsername);
             throw new BusinessRuleException(ErrorCode.UNAUTHORIZED, INVALID_CREDENTIALS_MESSAGE);
         }
 
         AppUser user = userOpt.get();
-        boolean passwordMatches =
-                passwordEncoder.matches(request.password(), user.getPasswordHash());
+        boolean passwordMatches = passwordEncoder.matches(rawPassword, user.getPasswordHash());
         if (!passwordMatches || !user.isEnabled()) {
             log.warn(
                     "Failed login attempt for username '{}' (enabled={})",
