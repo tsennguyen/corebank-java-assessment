@@ -22,6 +22,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -80,6 +81,7 @@ public class AccountController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessAccount(authentication, #id)")
     @Operation(
             summary = "Lấy chi tiết tài khoản",
             description = "Truy vấn thông tin tài khoản theo ID.")
@@ -88,6 +90,10 @@ public class AccountController {
                 responseCode = "200",
                 description = "Lấy chi tiết thành công",
                 content = @Content(schema = @Schema(implementation = AccountResponse.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền truy cập tài khoản của khách hàng khác",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
                 description = "Không tìm thấy tài khoản",

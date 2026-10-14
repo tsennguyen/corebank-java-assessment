@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.OwnershipGuard;
 import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.PageResponse;
@@ -44,6 +45,9 @@ class AccountTransactionControllerTest {
     @Autowired private MockMvc mockMvc;
 
     @MockBean private TransactionService transactionService;
+
+    @MockBean(name = "ownership")
+    private OwnershipGuard ownershipGuard;
 
     @Test
     @DisplayName("GET /api/v1/accounts/{id}/transactions returns 200 with paginated transactions")
@@ -89,5 +93,33 @@ class AccountTransactionControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/transactions returns 200 when CUSTOMER accesses own account"
+                    + " (AC 3)")
+    void getAccountTransactions_whenCustomerAccessesOwnAccount_shouldReturn200() throws Exception {
+        when(ownershipGuard.canAccessAccount(any(), eq(10L))).thenReturn(true);
+        when(transactionService.getAccountTransactions(eq(10L), any(Pageable.class)))
+                .thenReturn(new PageResponse<>(List.of(), 0, 20, 0L, 0));
+
+        mockMvc.perform(get("/api/v1/accounts/10/transactions")).andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/transactions returns 403 ACCESS_DENIED when CUSTOMER"
+                    + " accesses another account (AC 3)")
+    void getAccountTransactions_whenCustomerAccessesOtherAccount_shouldReturn403ProblemDetail()
+            throws Exception {
+        when(ownershipGuard.canAccessAccount(any(), eq(20L))).thenReturn(false);
+
+        mockMvc.perform(get("/api/v1/accounts/20/transactions"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
 }

@@ -16,6 +16,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +35,7 @@ public class AccountTransactionController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessAccount(authentication, #id)")
     @Operation(
             summary = "Lấy lịch sử giao dịch của tài khoản",
             description =
@@ -47,6 +49,10 @@ public class AccountTransactionController {
         @ApiResponse(
                 responseCode = "400",
                 description = "Trường sắp xếp không hợp lệ hoặc kích thước trang vượt quá 100",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền xem giao dịch của tài khoản khách hàng khác",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
