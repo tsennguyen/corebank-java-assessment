@@ -27,4 +27,5 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **3.1** | JWT Login, Role-Based Access Control & User-Scoped Idempotency | L2-01, L2-02, FR-13, FR-14, NFR-5 | [#25](https://github.com/tsennguyen/corebank-java-assessment/pull/25) | [3-1-jwt-login-and-role-access.md](3-1-jwt-login-and-role-access.md) |
 | **0.7** | Level 1 Concurrency, Idempotency & SQL Statistics Hardening | L1-04..L1-09, NC-01, NC-02, NC-08 | [#26](https://github.com/tsennguyen/corebank-java-assessment/pull/26) | [0-7-level1-audit-fixes-and-optimizations.md](0-7-level1-audit-fixes-and-optimizations.md) |
 | **3.2** | Customer Self-Service & Ownership Guard (IDOR Protection) | L2-01, FR-14, NFR-5, NC-08 | [#27](https://github.com/tsennguyen/corebank-java-assessment/pull/27) | [3-2-customer-self-service-and-ownership.md](3-2-customer-self-service-and-ownership.md) |
+| **3.3** | Advanced Transaction Search & Multi-Filter Indexing | L2-03, L2-04, G-05, FR-8, NFR-2 | [#28](https://github.com/tsennguyen/corebank-java-assessment/pull/28) | [3-3-advanced-transaction-search.md](3-3-advanced-transaction-search.md) |
 

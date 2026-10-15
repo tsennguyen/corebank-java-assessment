@@ -1231,5 +1231,115 @@ class TransactionServiceTest {
                 org.springframework.security.core.context.SecurityContextHolder.clearContext();
             }
         }
+
+        @Test
+        @DisplayName(
+                "searchTransactions supports multi-filter criteria (status, minAmount, maxAmount,"
+                        + " fromDate, toDate) and sorting by fee (AC 1, AC 2, L2-03, L2-04)")
+        void searchTransactions_withAdvancedFiltersAndFeeSort_shouldReturnPagedResults() {
+            Transaction tx =
+                    Transaction.createTransfer(
+                            "TXN-TRF-3301",
+                            1L,
+                            2L,
+                            new BigDecimal("2500000.00"),
+                            new BigDecimal("2000.00"),
+                            new BigDecimal("7498000.00"),
+                            new BigDecimal("12500000.00"),
+                            "HCMC",
+                            "Chuyển khoản tháng 9");
+            Pageable feeSortedPageable = PageRequest.of(0, 10, Sort.by(Sort.Order.desc("fee")));
+            when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of(tx), feeSortedPageable, 1));
+
+            TransactionSearchCriteria criteria =
+                    new TransactionSearchCriteria(
+                            1L,
+                            TransactionType.TRANSFER,
+                            TransactionStatus.COMPLETED,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("5000000.00"),
+                            LocalDate.of(2026, 9, 1),
+                            LocalDate.of(2026, 9, 30));
+
+            PageResponse<TransactionResponse> result =
+                    transactionService.searchTransactions(criteria, feeSortedPageable);
+
+            assertThat(result.content()).hasSize(1);
+            assertThat(result.content().get(0).referenceNo()).isEqualTo("TXN-TRF-3301");
+            assertThat(result.content().get(0).fee()).isEqualByComparingTo("2000.00");
+        }
+
+        @Test
+        @DisplayName(
+                "searchTransactions rejects negative minAmount/maxAmount, minAmount > maxAmount,"
+                        + " and fromDate > toDate with VALIDATION_FAILED (AC 2)")
+        void searchTransactions_whenInvalidFilterRanges_shouldThrowValidationFailed() {
+            Pageable pageable = PageRequest.of(0, 10);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    new BigDecimal("-1.00"),
+                                                    null,
+                                                    null,
+                                                    null),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    new BigDecimal("-100.00"),
+                                                    null,
+                                                    null),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    new BigDecimal("5000000.00"),
+                                                    new BigDecimal("1000000.00"),
+                                                    null,
+                                                    null),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    LocalDate.of(2026, 10, 15),
+                                                    LocalDate.of(2026, 10, 1)),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+        }
     }
 }
