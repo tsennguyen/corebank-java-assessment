@@ -283,4 +283,43 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V9 transaction_search_indexes migration creating status and amount"
+                    + " composite indexes")
+    void flywayMigration_shouldApplyV9TransactionSearchIndexesSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT version, description, type, script, success "
+                                    + "FROM core.flyway_schema_history "
+                                    + "WHERE version = '9'")) {
+                assertThat(rs.next())
+                        .as("Migration version 9 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script")).isEqualTo("V9__transaction_search_indexes.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core'"
+                                    + " AND indexname = 'idx_tx_status_created'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("indexdef")).contains("status").contains("created_at DESC");
+            }
+
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core'"
+                                    + " AND indexname = 'idx_tx_amount_created'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("indexdef"))
+                        .contains("amount DESC")
+                        .contains("created_at DESC");
+            }
+        }
+    }
 }

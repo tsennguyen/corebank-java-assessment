@@ -708,6 +708,71 @@ class TransactionControllerTest {
                     .andExpect(jsonPath("$.content", hasSize(1)))
                     .andExpect(jsonPath("$.totalElements").value(1));
         }
+
+        @Test
+        @DisplayName(
+                "GET /api/v1/transactions binds all advanced filter parameters (minAmount,"
+                        + " maxAmount, type, status, fromDate, toDate, sort) (AC 1, L2-03, L2-04)")
+        void searchTransactions_withAllAdvancedFilters_shouldBindCriteriaAndReturn200()
+                throws Exception {
+            TransactionResponse response =
+                    createTransferResponse(
+                            10L, 1L, 2L, new BigDecimal("2500000.00"), new BigDecimal("2000.00"));
+            PageResponse<TransactionResponse> pageResponse =
+                    new PageResponse<>(List.of(response), 0, 10, 1L, 1);
+
+            TransactionSearchCriteria expectedCriteria =
+                    new TransactionSearchCriteria(
+                            1L,
+                            TransactionType.TRANSFER,
+                            TransactionStatus.COMPLETED,
+                            new BigDecimal("1000000"),
+                            new BigDecimal("5000000"),
+                            java.time.LocalDate.of(2026, 9, 1),
+                            java.time.LocalDate.of(2026, 9, 30));
+
+            when(transactionService.searchTransactions(
+                            org.mockito.ArgumentMatchers.eq(expectedCriteria), any(Pageable.class)))
+                    .thenReturn(pageResponse);
+
+            mockMvc.perform(
+                            get(
+                                    "/api/v1/transactions?accountId=1&type=TRANSFER&status=COMPLETED"
+                                        + "&minAmount=1000000&maxAmount=5000000"
+                                        + "&fromDate=2026-09-01&toDate=2026-09-30"
+                                        + "&page=0&size=10&sort=amount,desc"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content", hasSize(1)))
+                    .andExpect(jsonPath("$.content[0].type").value("TRANSFER"))
+                    .andExpect(jsonPath("$.content[0].amount").value(2500000.00))
+                    .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        @DisplayName(
+                "GET /api/v1/transactions returns 400 VALIDATION_FAILED when fromDate is malformed")
+        void searchTransactions_whenMalformedFromDate_shouldReturn400() throws Exception {
+            mockMvc.perform(get("/api/v1/transactions?fromDate=2026-13-45"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+
+        @Test
+        @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+        @DisplayName(
+                "GET /api/v1/transactions returns 403 ACCESS_DENIED when CUSTOMER filters by"
+                        + " foreign accountId (AC 3, L2-01)")
+        void searchTransactions_whenCustomerPassesForeignAccountId_shouldReturn403()
+                throws Exception {
+            when(ownershipGuard.canAccessAccount(any(), org.mockito.ArgumentMatchers.eq(999L)))
+                    .thenReturn(false);
+
+            mockMvc.perform(get("/api/v1/transactions?accountId=999"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.status").value(403))
+                    .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+        }
     }
 
     @Nested

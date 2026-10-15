@@ -56,7 +56,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class TransactionService {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionService.class);
-    private static final Set<String> ALLOWED_SORT_FIELDS = Set.of("id", "createdAt", "amount");
+    private static final Set<String> ALLOWED_SORT_FIELDS =
+            Set.of("id", "createdAt", "amount", "fee");
 
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
@@ -714,21 +715,60 @@ public class TransactionService {
             TransactionSearchCriteria criteria, Pageable pageable) {
         Pageable effectivePageable = resolvePageable(pageable);
         validatePaginationAndSort(effectivePageable);
+        validateSearchCriteria(criteria);
 
         Set<Long> customerAccountIds = resolveRestrictedCustomerAccountIds(criteria.accountId());
         if (customerAccountIds != null && customerAccountIds.isEmpty()) {
             return emptyPageResponse(effectivePageable);
         }
 
+        Instant fromInstant =
+                criteria.fromDate() != null
+                        ? criteria.fromDate().atStartOfDay(clock.getZone()).toInstant()
+                        : null;
+        Instant toExclusiveInstant =
+                criteria.toDate() != null
+                        ? criteria.toDate().plusDays(1).atStartOfDay(clock.getZone()).toInstant()
+                        : null;
+
         Specification<Transaction> spec =
                 TransactionSpecifications.withAccountId(criteria.accountId())
-                        .and(TransactionSpecifications.withType(criteria.type()));
+                        .and(TransactionSpecifications.withType(criteria.type()))
+                        .and(TransactionSpecifications.withStatus(criteria.status()))
+                        .and(TransactionSpecifications.withMinAmount(criteria.minAmount()))
+                        .and(TransactionSpecifications.withMaxAmount(criteria.maxAmount()))
+                        .and(TransactionSpecifications.withCreatedAtFrom(fromInstant))
+                        .and(TransactionSpecifications.withCreatedAtBefore(toExclusiveInstant));
         if (criteria.accountId() == null && customerAccountIds != null) {
             spec = spec.and(TransactionSpecifications.withAccountIdsIn(customerAccountIds));
         }
 
         Page<Transaction> page = transactionRepository.findAll(spec, effectivePageable);
         return PageResponse.from(page, TransactionResponse::from);
+    }
+
+    private void validateSearchCriteria(TransactionSearchCriteria criteria) {
+        if (criteria.minAmount() != null && criteria.minAmount().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED, "Minimum amount must not be negative");
+        }
+        if (criteria.maxAmount() != null && criteria.maxAmount().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED, "Maximum amount must not be negative");
+        }
+        if (criteria.minAmount() != null
+                && criteria.maxAmount() != null
+                && criteria.minAmount().compareTo(criteria.maxAmount()) > 0) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Minimum amount must not be greater than maximum amount");
+        }
+        if (criteria.fromDate() != null
+                && criteria.toDate() != null
+                && criteria.fromDate().isAfter(criteria.toDate())) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED, "fromDate must not be after toDate");
+        }
     }
 
     private Set<Long> resolveRestrictedCustomerAccountIds(Long requestedAccountId) {
