@@ -320,4 +320,122 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
                 .andExpect(jsonPath("$.requestId").isNotEmpty());
     }
+
+    @Test
+    @DisplayName(
+            "POST /api/v1/accounts/{id}/status returns 200 OK with updated account when transition"
+                    + " is valid (L2-05)")
+    void changeStatus_shouldReturn200WhenValid() throws Exception {
+        com.example.corebanking.account.api.dto.ChangeAccountStatusRequest request =
+                new com.example.corebanking.account.api.dto.ChangeAccountStatusRequest(
+                        AccountStatus.LOCKED, "Phong tỏa xác minh");
+
+        AccountResponse response =
+                createResponse(
+                        10L,
+                        "100000000016",
+                        1L,
+                        new BigDecimal("0.00"),
+                        BalanceTier.LOW,
+                        new BigDecimal("10000000.00"),
+                        new BigDecimal("50000000.00"),
+                        AccountStatus.LOCKED,
+                        1L);
+
+        when(accountService.changeStatus(
+                        eq(10L),
+                        any(
+                                com.example.corebanking.account.api.dto.ChangeAccountStatusRequest
+                                        .class)))
+                .thenReturn(response);
+
+        mockMvc.perform(
+                        post("/api/v1/accounts/10/status")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(10))
+                .andExpect(jsonPath("$.status").value("LOCKED"));
+    }
+
+    @Test
+    @DisplayName(
+            "POST /api/v1/accounts/{id}/status returns 400 when reason is blank or targetStatus is"
+                    + " null (L2-05)")
+    void changeStatus_shouldReturn400WhenValidationFails() throws Exception {
+        mockMvc.perform(
+                        post("/api/v1/accounts/10/status")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"targetStatus\":\"LOCKED\",\"reason\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    @DisplayName(
+            "POST /api/v1/accounts/{id}/status returns 409 INVALID_STATUS_TRANSITION when"
+                    + " transition is forbidden (L2-05)")
+    void changeStatus_shouldReturn409OnInvalidTransition() throws Exception {
+        com.example.corebanking.account.api.dto.ChangeAccountStatusRequest request =
+                new com.example.corebanking.account.api.dto.ChangeAccountStatusRequest(
+                        AccountStatus.ACTIVE, "Mở lại tài khoản đã đóng");
+
+        when(accountService.changeStatus(
+                        eq(10L),
+                        any(
+                                com.example.corebanking.account.api.dto.ChangeAccountStatusRequest
+                                        .class)))
+                .thenThrow(
+                        new BusinessRuleException(
+                                ErrorCode.INVALID_STATUS_TRANSITION,
+                                "Invalid account status transition from CLOSED to ACTIVE"));
+
+        mockMvc.perform(
+                        post("/api/v1/accounts/10/status")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("INVALID_STATUS_TRANSITION"));
+    }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/status-history returns 200 OK for ADMIN and 403 for"
+                    + " unauthorized CUSTOMER (L2-05, L2-01)")
+    void getStatusHistory_shouldReturn200ForAdmin() throws Exception {
+        com.example.corebanking.account.api.dto.AccountStatusHistoryResponse item =
+                new com.example.corebanking.account.api.dto.AccountStatusHistoryResponse(
+                        1L,
+                        10L,
+                        null,
+                        AccountStatus.ACTIVE,
+                        "Account opened",
+                        "admin",
+                        Instant.parse("2026-10-09T08:00:00Z"));
+
+        when(accountService.getStatusHistory(10L)).thenReturn(List.of(item));
+
+        mockMvc.perform(get("/api/v1/accounts/10/status-history"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].accountId").value(10))
+                .andExpect(jsonPath("$[0].toStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$[0].reason").value("Account opened"));
+    }
+
+    @Test
+    @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/status-history returns 403 ACCESS_DENIED when CUSTOMER"
+                    + " accesses another customer's account")
+    void getStatusHistory_whenCustomerAccessesOtherAccount_shouldReturn403() throws Exception {
+        when(ownershipGuard.canAccessAccount(any(), eq(999L))).thenReturn(false);
+
+        mockMvc.perform(get("/api/v1/accounts/999/status-history"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
 }

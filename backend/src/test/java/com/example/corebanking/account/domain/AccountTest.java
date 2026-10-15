@@ -340,4 +340,118 @@ class AccountTest {
                                 assertThat(((BusinessRuleException) ex).getErrorCode())
                                         .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE));
     }
+
+    @Test
+    @DisplayName(
+            "changeStatus() supports valid transitions ACTIVE -> LOCKED -> ACTIVE -> CLOSED"
+                    + " (L2-05, FR-3)")
+    void changeStatus_shouldSupportValidLifecycleTransitions() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+
+        Instant t1 = Instant.parse("2026-10-09T09:00:00Z");
+        account.changeStatus(AccountStatus.LOCKED, t1);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.LOCKED);
+        assertThat(account.isLocked()).isTrue();
+        assertThat(account.isActive()).isFalse();
+        assertThat(account.getClosedAt()).isNull();
+
+        Instant t2 = Instant.parse("2026-10-09T10:00:00Z");
+        account.changeStatus(AccountStatus.ACTIVE, t2);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(account.isActive()).isTrue();
+        assertThat(account.isLocked()).isFalse();
+
+        Instant t3 = Instant.parse("2026-10-09T11:00:00Z");
+        account.changeStatus(AccountStatus.LOCKED, t3);
+        Instant t4 = Instant.parse("2026-10-09T12:00:00Z");
+        account.changeStatus(AccountStatus.CLOSED, t4);
+        assertThat(account.getStatus()).isEqualTo(AccountStatus.CLOSED);
+        assertThat(account.isClosed()).isTrue();
+        assertThat(account.getClosedAt()).isEqualTo(t4);
+    }
+
+    @Test
+    @DisplayName(
+            "changeStatus() throws INVALID_STATUS_TRANSITION (409) on self-transition or transition"
+                    + " from CLOSED (L2-05)")
+    void changeStatus_shouldRejectSelfTransitionAndTransitionsFromClosed() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        Instant now = Instant.parse("2026-10-09T09:00:00Z");
+
+        // Self-transition ACTIVE -> ACTIVE
+        assertThatThrownBy(() -> account.changeStatus(AccountStatus.ACTIVE, now))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION));
+
+        // Transition to LOCKED, then self-transition LOCKED -> LOCKED
+        account.changeStatus(AccountStatus.LOCKED, now);
+        assertThatThrownBy(() -> account.changeStatus(AccountStatus.LOCKED, now))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION));
+
+        // Transition to CLOSED, then reject CLOSED -> ACTIVE, CLOSED -> LOCKED, CLOSED -> CLOSED
+        account.changeStatus(AccountStatus.CLOSED, now);
+        for (AccountStatus target : AccountStatus.values()) {
+            assertThatThrownBy(() -> account.changeStatus(target, now))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.INVALID_STATUS_TRANSITION));
+        }
+    }
+
+    @Test
+    @DisplayName("credit() and debit() throw ACCOUNT_NOT_ACTIVE (422) when account is LOCKED")
+    void creditAndDebit_whenAccountLocked_shouldThrowAccountNotActive() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("50000000.00"),
+                        new BigDecimal("100000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        account.credit(com.example.corebanking.common.domain.Money.of("500000.00"));
+        account.changeStatus(AccountStatus.LOCKED, Instant.parse("2026-10-09T09:00:00Z"));
+
+        assertThatThrownBy(
+                        () ->
+                                account.credit(
+                                        com.example.corebanking.common.domain.Money.of(
+                                                "100000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE));
+
+        assertThatThrownBy(
+                        () ->
+                                account.debit(
+                                        com.example.corebanking.common.domain.Money.of(
+                                                "100000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE));
+    }
 }

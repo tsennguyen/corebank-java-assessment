@@ -1,6 +1,8 @@
 package com.example.corebanking.account.api;
 
 import com.example.corebanking.account.api.dto.AccountResponse;
+import com.example.corebanking.account.api.dto.AccountStatusHistoryResponse;
+import com.example.corebanking.account.api.dto.ChangeAccountStatusRequest;
 import com.example.corebanking.account.api.dto.CreateAccountRequest;
 import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.application.AccountService;
@@ -9,6 +11,7 @@ import com.example.corebanking.common.api.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -16,6 +19,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.net.URI;
+import java.util.List;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -34,7 +38,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-/** REST Controller exposing Account management and limit adjustment operations. */
+/**
+ * REST Controller exposing Account management, limit adjustment, and status lifecycle operations.
+ */
 @RestController
 @RequestMapping("/api/v1/accounts")
 @Tag(name = "Account", description = "Quản lý tài khoản thanh toán và hạn mức giao dịch")
@@ -169,12 +175,80 @@ public class AccountController {
         return ResponseEntity.ok(accountService.updateLimits(id, request));
     }
 
+    @PostMapping("/{id}/status")
+    @Operation(
+            summary = "Chuyển trạng thái tài khoản (ACTIVE, LOCKED, CLOSED)",
+            description =
+                    "Khóa, mở khóa hoặc đóng tài khoản theo máy trạng thái hữu hạn kèm lý do kiểm"
+                            + " toán (L2-05, FR-3).")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "200",
+                description = "Chuyển trạng thái tài khoản thành công",
+                content = @Content(schema = @Schema(implementation = AccountResponse.class))),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Thiếu trạng thái đích hoặc lý do không hợp lệ",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy tài khoản",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "409",
+                description =
+                        "Chuyển trạng thái không hợp lệ (INVALID_STATUS_TRANSITION) hoặc tài khoản"
+                                + " còn số dư khi đóng (ACCOUNT_HAS_BALANCE)",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<AccountResponse> changeStatus(
+            @Parameter(description = "ID nội bộ của tài khoản", example = "1") @PathVariable
+                    Long id,
+            @Valid @RequestBody ChangeAccountStatusRequest request) {
+        return ResponseEntity.ok(accountService.changeStatus(id, request));
+    }
+
+    @GetMapping("/{id}/status-history")
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessAccount(authentication, #id)")
+    @Operation(
+            summary = "Tra cứu lịch sử thay đổi trạng thái tài khoản",
+            description =
+                    "Lấy toàn bộ lịch sử chuyển đổi trạng thái của tài khoản sắp xếp giảm dần theo"
+                            + " thời điểm thay đổi (L2-05, FR-3).")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "200",
+                description = "Danh sách lịch sử trạng thái tài khoản",
+                content =
+                        @Content(
+                                array =
+                                        @ArraySchema(
+                                                schema =
+                                                        @Schema(
+                                                                implementation =
+                                                                        AccountStatusHistoryResponse
+                                                                                .class)))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền truy cập lịch sử của tài khoản khách hàng khác",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy tài khoản",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<List<AccountStatusHistoryResponse>> getStatusHistory(
+            @Parameter(description = "ID nội bộ của tài khoản", example = "1") @PathVariable
+                    Long id) {
+        return ResponseEntity.ok(accountService.getStatusHistory(id));
+    }
+
     @DeleteMapping("/{id}")
     @Operation(
             summary = "Đóng tài khoản",
             description =
                     "Chuyển trạng thái tài khoản sang CLOSED nếu số dư bằng 0; từ chối 409 nếu còn"
-                            + " số dư.")
+                            + " số dư hoặc đã đóng.")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "Đóng tài khoản thành công"),
         @ApiResponse(
@@ -183,7 +257,9 @@ public class AccountController {
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "409",
-                description = "Tài khoản vẫn còn số dư lớn hơn 0 (ACCOUNT_HAS_BALANCE)",
+                description =
+                        "Tài khoản vẫn còn số dư lớn hơn 0 (ACCOUNT_HAS_BALANCE) hoặc đã ở trạng"
+                                + " thái CLOSED (INVALID_STATUS_TRANSITION)",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<Void> closeAccount(

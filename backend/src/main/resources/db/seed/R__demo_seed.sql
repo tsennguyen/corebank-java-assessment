@@ -53,6 +53,16 @@ FROM (
 JOIN core.customer c ON c.customer_code = v.cust_code
 ON CONFLICT (account_number) DO NOTHING;
 
+-- 2b. Seed initial status history (NULL -> ACTIVE) for demo accounts that do not yet have a history entry
+INSERT INTO core.account_status_history (
+    account_id, from_status, to_status, reason, changed_by, changed_at
+)
+SELECT a.id, NULL, a.status, 'Account opened', 'SYSTEM_SEED', a.created_at
+FROM core.account a
+WHERE NOT EXISTS (
+    SELECT 1 FROM core.account_status_history h WHERE h.account_id = a.id
+);
+
 -- 3. Seed synthetic historical transactions across 12 months in ascending chronological order (strictly consistent with account balances)
 INSERT INTO core.transaction (
     reference_no, type, source_account_id, target_account_id, amount, fee,
