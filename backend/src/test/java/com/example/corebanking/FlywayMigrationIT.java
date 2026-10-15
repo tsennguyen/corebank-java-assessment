@@ -363,4 +363,42 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V11 recurring_transaction migration creating table and partial due"
+                    + " index")
+    void flywayMigration_shouldApplyV11RecurringTransactionSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT version, description, type, script, success "
+                                    + "FROM core.flyway_schema_history "
+                                    + "WHERE version = '11'")) {
+                assertThat(rs.next())
+                        .as("Migration version 11 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script")).isEqualTo("V11__recurring_transaction.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    connection
+                            .getMetaData()
+                            .getTables(null, "core", "recurring_transaction", null)) {
+                assertThat(rs.next())
+                        .as("Table 'recurring_transaction' should exist in schema 'core'")
+                        .isTrue();
+            }
+
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core'"
+                                    + " AND indexname = 'idx_rec_due'")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("indexdef")).contains("next_run_at").contains("ACTIVE");
+            }
+        }
+    }
 }

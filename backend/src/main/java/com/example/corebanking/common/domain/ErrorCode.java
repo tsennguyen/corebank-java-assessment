@@ -28,6 +28,8 @@ public enum ErrorCode {
     INVALID_STATUS_TRANSITION(409, "Invalid status transition"),
     ALREADY_REVERSED(409, "Transaction has already been reversed"),
     ACCOUNT_HAS_BALANCE(409, "Account balance must be zero before closing"),
+    ACCOUNT_HAS_ACTIVE_RECURRING(
+            409, "Account has active recurring transactions and cannot be closed"),
     CUSTOMER_HAS_ACTIVE_ACCOUNTS(409, "Customer has active or open accounts and cannot be deleted"),
     LOCK_TIMEOUT(409, "Resource lock acquisition timed out"),
     CONCURRENT_MODIFICATION(409, "Concurrent modification conflict detected"),

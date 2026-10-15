@@ -29,4 +29,5 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **3.2** | Customer Self-Service & Ownership Guard (IDOR Protection) | L2-01, FR-14, NFR-5, NC-08 | [#27](https://github.com/tsennguyen/corebank-java-assessment/pull/27) | [3-2-customer-self-service-and-ownership.md](3-2-customer-self-service-and-ownership.md) |
 | **3.3** | Advanced Transaction Search & Multi-Filter Indexing | L2-03, L2-04, G-05, FR-8, NFR-2 | [#28](https://github.com/tsennguyen/corebank-java-assessment/pull/28) | [3-3-advanced-transaction-search.md](3-3-advanced-transaction-search.md) |
 | **3.4** | Account Status Lifecycle & Immutable Audit History | L2-05, FR-3, FR-14, NFR-1 | [#29](https://github.com/tsennguyen/corebank-java-assessment/pull/29) | [3-4-account-status-lifecycle.md](3-4-account-status-lifecycle.md) |
+| **3.5** | Recurring Transaction Setup & Lifecycle Management | L2-06, FR-16, FR-2, G-05 | [#30](https://github.com/tsennguyen/corebank-java-assessment/pull/30) | [3-5-recurring-transaction-setup.md](3-5-recurring-transaction-setup.md) |
 
