@@ -1153,5 +1153,83 @@ class TransactionServiceTest {
                 org.springframework.security.core.context.SecurityContextHolder.clearContext();
             }
         }
+
+        @Test
+        @DisplayName(
+                "searchTransactions restricts results to owned accounts for CUSTOMER and rejects"
+                        + " unowned accountId (AC 4, L2-01)")
+        void
+                searchTransactions_whenCustomer_shouldRestrictToOwnedAccountsAndRejectForeignAccount() {
+            org.springframework.security.oauth2.jwt.Jwt jwt =
+                    org.springframework.security.oauth2.jwt.Jwt.withTokenValue("cust-token")
+                            .header("alg", "HS256")
+                            .subject("2")
+                            .claim("username", "cust.an")
+                            .claim("role", "CUSTOMER")
+                            .claim("customerId", 10L)
+                            .issuedAt(Instant.parse("2026-10-14T10:00:00Z"))
+                            .expiresAt(Instant.parse("2026-10-14T10:15:00Z"))
+                            .build();
+            org.springframework.security.oauth2.server.resource.authentication
+                            .JwtAuthenticationToken
+                    customerAuth =
+                            new org.springframework.security.oauth2.server.resource.authentication
+                                    .JwtAuthenticationToken(
+                                    jwt,
+                                    java.util.List.of(
+                                            new org.springframework.security.core.authority
+                                                    .SimpleGrantedAuthority("ROLE_CUSTOMER")),
+                                    "cust.an");
+
+            try {
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .setAuthentication(customerAuth);
+
+                // 1. Customer with empty account set returns empty page without DB query
+                when(accountRepository.findIdsByCustomerId(10L)).thenReturn(java.util.Set.of());
+                PageResponse<TransactionResponse> emptyResult =
+                        transactionService.searchTransactions(
+                                new TransactionSearchCriteria(null, null), PageRequest.of(0, 20));
+                assertThat(emptyResult.content()).isEmpty();
+                assertThat(emptyResult.totalElements()).isZero();
+
+                // 2. Customer with owned accounts queries only within owned account IDs
+                when(accountRepository.findIdsByCustomerId(10L))
+                        .thenReturn(java.util.Set.of(100L, 101L));
+                Transaction tx =
+                        Transaction.createDeposit(
+                                "TXN-CUST-001",
+                                100L,
+                                new BigDecimal("500000.00"),
+                                new BigDecimal("500000.00"),
+                                "HN",
+                                "Nạp");
+                when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                        .thenReturn(new PageImpl<>(List.of(tx), PageRequest.of(0, 20), 1));
+                PageResponse<TransactionResponse> ownedResult =
+                        transactionService.searchTransactions(
+                                new TransactionSearchCriteria(null, null), PageRequest.of(0, 20));
+                assertThat(ownedResult.content()).hasSize(1);
+
+                // 3. Customer filtering by owned accountId succeeds
+                when(accountRepository.existsByIdAndCustomerId(100L, 10L)).thenReturn(true);
+                PageResponse<TransactionResponse> filteredOwned =
+                        transactionService.searchTransactions(
+                                new TransactionSearchCriteria(100L, null), PageRequest.of(0, 20));
+                assertThat(filteredOwned.content()).hasSize(1);
+
+                // 4. Customer filtering by foreign accountId throws AccessDeniedException
+                when(accountRepository.existsByIdAndCustomerId(999L, 10L)).thenReturn(false);
+                assertThatThrownBy(
+                                () ->
+                                        transactionService.searchTransactions(
+                                                new TransactionSearchCriteria(999L, null),
+                                                PageRequest.of(0, 20)))
+                        .isInstanceOf(
+                                org.springframework.security.access.AccessDeniedException.class);
+            } finally {
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
+            }
+        }
     }
 }

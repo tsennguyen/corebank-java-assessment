@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.OwnershipGuard;
 import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.PageResponse;
@@ -61,6 +62,9 @@ class TransactionControllerTest {
     @Autowired private ObjectMapper objectMapper;
 
     @MockBean private TransactionService transactionService;
+
+    @MockBean(name = "ownership")
+    private OwnershipGuard ownershipGuard;
 
     private TransactionResponse createDepositResponse(Long id, Long accountId, BigDecimal amount) {
         return new TransactionResponse(
@@ -896,6 +900,23 @@ class TransactionControllerTest {
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.status").value(404))
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        }
+
+        @Test
+        @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+        @DisplayName(
+                "GET /api/v1/transactions/{id} returns 403 ACCESS_DENIED when CUSTOMER accesses"
+                        + " unrelated transaction (AC 4)")
+        void
+                getTransactionById_whenCustomerAccessesUnrelatedTransaction_shouldReturn403ProblemDetail()
+                        throws Exception {
+            when(ownershipGuard.canAccessTransaction(any(), org.mockito.ArgumentMatchers.eq(888L)))
+                    .thenReturn(false);
+
+            mockMvc.perform(get("/api/v1/transactions/888"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.status").value(403))
+                    .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         }
     }
 }

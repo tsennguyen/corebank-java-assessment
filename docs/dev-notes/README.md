@@ -25,4 +25,6 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **2.9** | Balance Tier & Location Statistics + Demo Seed | L1-09, L1-10, G-05, E-02 | [#20](https://github.com/tsennguyen/corebank-java-assessment/pull/20) | [2-9-balance-tier-and-location-statistics.md](2-9-balance-tier-and-location-statistics.md) |
 | **2.10** | Container Image, Docker Compose & Level 1 Release | NC-06, NC-10, FR-24, NFR-10 | [#21](https://github.com/tsennguyen/corebank-java-assessment/pull/21) | [2-10-container-image-and-level-1-release.md](2-10-container-image-and-level-1-release.md) |
 | **3.1** | JWT Login, Role-Based Access Control & User-Scoped Idempotency | L2-01, L2-02, FR-13, FR-14, NFR-5 | [#25](https://github.com/tsennguyen/corebank-java-assessment/pull/25) | [3-1-jwt-login-and-role-access.md](3-1-jwt-login-and-role-access.md) |
+| **0.7** | Level 1 Concurrency, Idempotency & SQL Statistics Hardening | L1-04..L1-09, NC-01, NC-02, NC-08 | [#26](https://github.com/tsennguyen/corebank-java-assessment/pull/26) | [0-7-level1-audit-fixes-and-optimizations.md](0-7-level1-audit-fixes-and-optimizations.md) |
+| **3.2** | Customer Self-Service & Ownership Guard (IDOR Protection) | L2-01, FR-14, NFR-5, NC-08 | [#27](https://github.com/tsennguyen/corebank-java-assessment/pull/27) | [3-2-customer-self-service-and-ownership.md](3-2-customer-self-service-and-ownership.md) |
 

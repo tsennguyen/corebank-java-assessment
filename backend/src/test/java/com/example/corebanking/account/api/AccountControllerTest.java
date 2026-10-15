@@ -21,6 +21,7 @@ import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.application.AccountService;
 import com.example.corebanking.account.domain.AccountStatus;
 import com.example.corebanking.account.domain.BalanceTier;
+import com.example.corebanking.auth.infrastructure.OwnershipGuard;
 import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.PageResponse;
@@ -59,6 +60,9 @@ class AccountControllerTest {
     @Autowired private ObjectMapper objectMapper;
 
     @MockBean private AccountService accountService;
+
+    @MockBean(name = "ownership")
+    private OwnershipGuard ownershipGuard;
 
     private AccountResponse createResponse(
             Long id,
@@ -299,5 +303,21 @@ class AccountControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.status").value(409))
                 .andExpect(jsonPath("$.code").value("ACCOUNT_HAS_BALANCE"));
+    }
+
+    @Test
+    @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+    @DisplayName(
+            "GET /api/v1/accounts/{id} returns 403 ACCESS_DENIED ProblemDetail when CUSTOMER"
+                    + " accesses another customer's account (AC 3, L2-01)")
+    void getAccountById_whenCustomerAccessesOtherCustomerAccount_shouldReturn403ProblemDetail()
+            throws Exception {
+        when(ownershipGuard.canAccessAccount(any(), eq(999L))).thenReturn(false);
+
+        mockMvc.perform(get("/api/v1/accounts/999"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
     }
 }

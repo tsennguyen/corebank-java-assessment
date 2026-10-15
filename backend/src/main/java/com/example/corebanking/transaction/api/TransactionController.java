@@ -29,6 +29,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -304,6 +305,7 @@ public class TransactionController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessTransaction(authentication, #id)")
     @Operation(
             summary = "Lấy chi tiết giao dịch",
             description = "Truy vấn thông tin chi tiết một giao dịch tài chính theo ID.")
@@ -312,6 +314,10 @@ public class TransactionController {
                 responseCode = "200",
                 description = "Lấy thông tin giao dịch thành công",
                 content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền truy cập giao dịch không thuộc tài khoản sở hữu",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
                 description = "Không tìm thấy giao dịch",
@@ -389,6 +395,9 @@ public class TransactionController {
     }
 
     @GetMapping
+    @PreAuthorize(
+            "hasRole('ADMIN') or #accountId == null or"
+                    + " @ownership.canAccessAccount(authentication, #accountId)")
     @Operation(
             summary = "Tìm kiếm và phân trang giao dịch",
             description =
@@ -402,6 +411,10 @@ public class TransactionController {
         @ApiResponse(
                 responseCode = "400",
                 description = "Trường sắp xếp không hợp lệ hoặc kích thước trang vượt ngưỡng 100",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền lọc giao dịch theo tài khoản của khách hàng khác",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<PageResponse<TransactionResponse>> searchTransactions(

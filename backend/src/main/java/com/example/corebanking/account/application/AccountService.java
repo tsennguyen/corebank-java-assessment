@@ -16,6 +16,7 @@ import com.example.corebanking.common.domain.ResourceNotFoundException;
 import com.example.corebanking.customer.infrastructure.CustomerRepository;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,6 +107,34 @@ public class AccountService {
                         .findById(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Account", id));
         return AccountResponse.from(account, balanceTierPolicy.classify(account.getBalance()));
+    }
+
+    /**
+     * Retrieves all accounts owned by a specific customer ordered by ID descending (L2-01, FR-14).
+     */
+    public List<AccountResponse> getAccountsByCustomerId(Long customerId) {
+        return accountRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
+                .map(
+                        account ->
+                                AccountResponse.from(
+                                        account, balanceTierPolicy.classify(account.getBalance())))
+                .toList();
+    }
+
+    /**
+     * Retrieves accounts owned by a specific customer filtered by optional status, ordered by ID
+     * descending (L2-01, FR-14).
+     */
+    public List<AccountResponse> getAccountsByCustomerId(Long customerId, AccountStatus status) {
+        if (status == null) {
+            return getAccountsByCustomerId(customerId);
+        }
+        return accountRepository.findByCustomerIdAndStatusOrderByIdDesc(customerId, status).stream()
+                .map(
+                        account ->
+                                AccountResponse.from(
+                                        account, balanceTierPolicy.classify(account.getBalance())))
+                .toList();
     }
 
     /** Searches accounts matching filters with pagination and sorting. */

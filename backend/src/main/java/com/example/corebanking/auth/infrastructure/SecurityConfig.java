@@ -127,6 +127,8 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout")
                                         .authenticated()
+                                        .requestMatchers("/api/v1/me", "/api/v1/me/**")
+                                        .hasRole("CUSTOMER")
                                         .requestMatchers(
                                                 "/api/v1/customers/**",
                                                 "/api/v1/customer-types/**",

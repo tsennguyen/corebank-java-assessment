@@ -29,6 +29,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -697,7 +702,9 @@ public class TransactionService {
     }
 
     /**
-     * Searches transactions with dynamic filtering criteria and pagination.
+     * Searches transactions with dynamic filtering criteria and pagination. When invoked by a
+     * {@code CUSTOMER}, automatically restricts results to accounts owned by that customer (L2-01,
+     * FR-14).
      *
      * @param criteria search filters
      * @param pageable pagination and sorting parameters
@@ -708,12 +715,76 @@ public class TransactionService {
         Pageable effectivePageable = resolvePageable(pageable);
         validatePaginationAndSort(effectivePageable);
 
+        Set<Long> customerAccountIds = resolveRestrictedCustomerAccountIds(criteria.accountId());
+        if (customerAccountIds != null && customerAccountIds.isEmpty()) {
+            return emptyPageResponse(effectivePageable);
+        }
+
         Specification<Transaction> spec =
                 TransactionSpecifications.withAccountId(criteria.accountId())
                         .and(TransactionSpecifications.withType(criteria.type()));
+        if (criteria.accountId() == null && customerAccountIds != null) {
+            spec = spec.and(TransactionSpecifications.withAccountIdsIn(customerAccountIds));
+        }
 
         Page<Transaction> page = transactionRepository.findAll(spec, effectivePageable);
         return PageResponse.from(page, TransactionResponse::from);
+    }
+
+    private Set<Long> resolveRestrictedCustomerAccountIds(Long requestedAccountId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return null;
+        }
+        boolean isAdmin =
+                auth.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (isAdmin) {
+            return null;
+        }
+        boolean isCustomer =
+                auth.getAuthorities().stream()
+                        .anyMatch(a -> "ROLE_CUSTOMER".equals(a.getAuthority()));
+        if (!isCustomer) {
+            return null;
+        }
+
+        Long customerId = extractCustomerIdFromAuth(auth);
+        if (customerId == null) {
+            throw new AccessDeniedException("Customer token is missing customerId claim");
+        }
+        if (requestedAccountId != null) {
+            if (!accountRepository.existsByIdAndCustomerId(requestedAccountId, customerId)) {
+                throw new AccessDeniedException(
+                        "You do not have permission to access this resource");
+            }
+            return Set.of(requestedAccountId);
+        }
+        Set<Long> ownedIds = accountRepository.findIdsByCustomerId(customerId);
+        return ownedIds != null ? ownedIds : Set.of();
+    }
+
+    private Long extractCustomerIdFromAuth(Authentication auth) {
+        Object principal = auth.getPrincipal();
+        if (principal instanceof Jwt jwt) {
+            Object claim = jwt.getClaim("customerId");
+            if (claim instanceof Number number) {
+                return number.longValue();
+            }
+            if (claim instanceof String str && !str.isBlank()) {
+                try {
+                    return Long.parseLong(str.trim());
+                } catch (NumberFormatException ignored) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private PageResponse<TransactionResponse> emptyPageResponse(Pageable pageable) {
+        int page = pageable.isUnpaged() ? 0 : pageable.getPageNumber();
+        int size = pageable.isUnpaged() ? 0 : pageable.getPageSize();
+        return new PageResponse<>(List.of(), page, size, 0L, 0);
     }
 
     private Pageable resolvePageable(Pageable pageable) {
@@ -757,9 +828,7 @@ public class TransactionService {
     }
 
     static String resolveCurrentScope() {
-        org.springframework.security.core.Authentication auth =
-                org.springframework.security.core.context.SecurityContextHolder.getContext()
-                        .getAuthentication();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null
                 && auth.isAuthenticated()
                 && auth.getName() != null

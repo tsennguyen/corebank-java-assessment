@@ -372,4 +372,34 @@ class AccountServiceTest {
                                         .isEqualTo(ErrorCode.ACCOUNT_HAS_BALANCE))
                 .hasMessageContaining("Account balance must be zero before closing");
     }
+
+    @Test
+    @DisplayName(
+            "getAccountsByCustomerId returns customer accounts ordered by id desc with balanceTier"
+                    + " and optional status filter (AC 2)")
+    void getAccountsByCustomerId_shouldReturnMappedAccountsAndSupportStatusFilter() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        10L,
+                        new BigDecimal("10000000.00"),
+                        new BigDecimal("50000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        setId(account, 101L);
+        setBalance(account, new BigDecimal("75000000.00"));
+
+        when(accountRepository.findByCustomerIdOrderByIdDesc(10L)).thenReturn(List.of(account));
+        when(accountRepository.findByCustomerIdAndStatusOrderByIdDesc(10L, AccountStatus.ACTIVE))
+                .thenReturn(List.of(account));
+
+        List<AccountResponse> all = accountService.getAccountsByCustomerId(10L, null);
+        assertThat(all).hasSize(1);
+        assertThat(all.get(0).id()).isEqualTo(101L);
+        assertThat(all.get(0).balanceTier()).isEqualTo(BalanceTier.MEDIUM);
+
+        List<AccountResponse> activeOnly =
+                accountService.getAccountsByCustomerId(10L, AccountStatus.ACTIVE);
+        assertThat(activeOnly).hasSize(1);
+        assertThat(activeOnly.get(0).status()).isEqualTo(AccountStatus.ACTIVE);
+    }
 }
