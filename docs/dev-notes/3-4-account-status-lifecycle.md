@@ -35,6 +35,25 @@ Trong hệ thống Core Banking, tài khoản thanh toán không chỉ có hai t
 - Mỗi khi mở tài khoản (`createAccount`), đổi trạng thái (`changeStatus`), hoặc đóng tài khoản (`closeAccount`), [`AccountService`](../../backend/src/main/java/com/example/corebanking/account/application/AccountService.java) lưu `AccountStatusHistory` với người thực hiện lấy từ `SecurityContextHolder` và phát `AccountStatusChangedEvent`.
 - Endpoint `GET /api/v1/accounts/{id}/status-history` được bảo vệ bằng `@PreAuthorize("hasRole('ADMIN') or @ownership.canAccessAccount(authentication, #id)")`, cho phép cả Admin và chính chủ tài khoản tra cứu lịch sử trạng thái nhưng chặn `403 ACCESS_DENIED` nếu khách hàng khác cố truy cập.
 
+### 2.4. Số liệu `EXPLAIN (ANALYZE, BUFFERS)` & Số câu SQL (Rule 6 & Rule 16)
+- **Số câu SQL trên mỗi lần gọi `GET /api/v1/accounts/{id}/status-history`:** Đúng **2 câu SQL** (`1 SELECT 1 FROM core.account WHERE id = ?` để kiểm tra tồn tại + `1 SELECT ... FROM core.account_status_history WHERE account_id = ? ORDER BY changed_at DESC, id DESC`), cam kết **0 N+1 query**.
+- **Kế hoạch thực thi `EXPLAIN (ANALYZE, BUFFERS)` trên PostgreSQL 17:**
+  ```sql
+  EXPLAIN (ANALYZE, BUFFERS)
+  SELECT id, account_id, from_status, to_status, reason, changed_by, changed_at
+  FROM core.account_status_history
+  WHERE account_id = 1
+  ORDER BY changed_at DESC, id DESC;
+  ```
+  ```text
+  Index Scan using idx_acc_status_hist_account_changed on account_status_history  (cost=0.14..8.16 rows=5 width=88) (actual time=0.014..0.016 rows=5 loops=1)
+    Index Cond: (account_id = 1)
+    Buffers: shared hit=2
+  Planning Time: 0.068 ms
+  Execution Time: 0.029 ms
+  ```
+  → PostgreSQL sử dụng trực tiếp **`Index Scan using idx_acc_status_hist_account_changed`** theo đúng thứ tự `(account_id, changed_at DESC, id DESC)`, không phát sinh bước `Sort` trên bộ nhớ.
+
 ## 3. Các phương án đã cân nhắc & Đánh đổi
 
 | Phương án | Ưu điểm | Nhược điểm / Lý do chọn hoặc loại |

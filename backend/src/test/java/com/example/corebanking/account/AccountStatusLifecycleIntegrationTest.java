@@ -15,8 +15,11 @@ import com.example.corebanking.customer.infrastructure.CustomerRepository;
 import com.example.corebanking.support.IntegrationTestBase;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.util.UUID;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +39,7 @@ class AccountStatusLifecycleIntegrationTest extends IntegrationTestBase {
     @Autowired private CustomerRepository customerRepository;
     @Autowired private AppUserRepository appUserRepository;
     @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private EntityManager entityManager;
 
     private long createAccountForCustomer(long customerId) throws Exception {
         MvcResult result =
@@ -420,12 +424,21 @@ class AccountStatusLifecycleIntegrationTest extends IntegrationTestBase {
         mockMvc.perform(delete("/api/v1/accounts/{id}", accA)).andExpect(status().isNoContent());
 
         // 7. Verify GET /api/v1/accounts/{id}/status-history returns all 5 transitions for accA in
-        // reverse chronological order (changedAt DESC, id DESC):
+        // reverse chronological order (changedAt DESC, id DESC) and executes <= 2 SQL queries (Rule
+        // 16):
         // [0] LOCKED -> CLOSED ("Account closed")
         // [1] ACTIVE -> LOCKED ("Khóa trước khi đóng vĩnh viễn")
         // [2] LOCKED -> ACTIVE ("Đã xác minh hợp lệ, mở khóa tài khoản")
         // [3] ACTIVE -> LOCKED ("Phong tỏa tạm thời để rà soát giao dịch")
         // [4] null   -> ACTIVE ("Account opened")
+        Statistics stats =
+                entityManager
+                        .getEntityManagerFactory()
+                        .unwrap(SessionFactory.class)
+                        .getStatistics();
+        stats.setStatisticsEnabled(true);
+        stats.clear();
+
         mockMvc.perform(get("/api/v1/accounts/{id}/status-history", accA))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(5)))
@@ -442,6 +455,12 @@ class AccountStatusLifecycleIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$[4].fromStatus").value(nullValue()))
                 .andExpect(jsonPath("$[4].toStatus").value("ACTIVE"))
                 .andExpect(jsonPath("$[4].reason").value("Account opened"));
+
+        org.assertj.core.api.Assertions.assertThat(stats.getPrepareStatementCount())
+                .as(
+                        "GET /api/v1/accounts/{id}/status-history must execute at most 2 SQL"
+                                + " statements")
+                .isLessThanOrEqualTo(2L);
 
         // 8. Verify ownership on GET /api/v1/accounts/{id}/status-history using real JWT login:
         // Customer A can view accA history (200 OK) but gets 403 ACCESS_DENIED on accB
