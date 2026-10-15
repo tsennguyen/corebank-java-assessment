@@ -60,6 +60,7 @@ public class AccountService {
     private final Clock clock;
     private final AccountStatusHistoryRepository statusHistoryRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final List<AccountClosureGuard> accountClosureGuards;
 
     public AccountService(
             AccountRepository accountRepository,
@@ -74,7 +75,27 @@ public class AccountService {
                 balanceTierPolicy,
                 clock,
                 null,
-                null);
+                null,
+                List.of());
+    }
+
+    public AccountService(
+            AccountRepository accountRepository,
+            CustomerRepository customerRepository,
+            AccountNumberGenerator accountNumberGenerator,
+            BalanceTierPolicy balanceTierPolicy,
+            Clock clock,
+            AccountStatusHistoryRepository statusHistoryRepository,
+            ApplicationEventPublisher eventPublisher) {
+        this(
+                accountRepository,
+                customerRepository,
+                accountNumberGenerator,
+                balanceTierPolicy,
+                clock,
+                statusHistoryRepository,
+                eventPublisher,
+                List.of());
     }
 
     @Autowired
@@ -85,7 +106,8 @@ public class AccountService {
             BalanceTierPolicy balanceTierPolicy,
             Clock clock,
             AccountStatusHistoryRepository statusHistoryRepository,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            List<AccountClosureGuard> accountClosureGuards) {
         this.accountRepository = accountRepository;
         this.customerRepository = customerRepository;
         this.accountNumberGenerator = accountNumberGenerator;
@@ -93,6 +115,8 @@ public class AccountService {
         this.clock = clock;
         this.statusHistoryRepository = statusHistoryRepository;
         this.eventPublisher = eventPublisher;
+        this.accountClosureGuards =
+                accountClosureGuards != null ? List.copyOf(accountClosureGuards) : List.of();
     }
 
     /**
@@ -273,6 +297,9 @@ public class AccountService {
         Instant now = clock.instant();
         String trimmedReason = request.reason().trim();
 
+        if (request.targetStatus() == AccountStatus.CLOSED) {
+            validateCanCloseAccount(account);
+        }
         account.changeStatus(request.targetStatus(), now);
         Account saved = accountRepository.save(account);
         recordStatusChangeAndPublishEvent(
@@ -308,9 +335,9 @@ public class AccountService {
     }
 
     /**
-     * Closes an account if balance is zero under pessimistic write lock, recording status history
-     * and publishing {@link AccountStatusChangedEvent}. Throws ACCOUNT_HAS_BALANCE (409) if balance
-     * > 0 or INVALID_STATUS_TRANSITION (409) if already CLOSED.
+     * Closes an account if balance is zero and no active recurring transactions exist under
+     * pessimistic write lock, recording status history and publishing {@link
+     * AccountStatusChangedEvent}.
      */
     @Transactional
     public void closeAccount(Long id) {
@@ -322,11 +349,22 @@ public class AccountService {
         AccountStatus fromStatus = account.getStatus();
         Instant now = clock.instant();
 
+        validateCanCloseAccount(account);
         account.close(now);
         Account saved = accountRepository.save(account);
         recordStatusChangeAndPublishEvent(
                 saved, fromStatus, AccountStatus.CLOSED, ACCOUNT_CLOSED_REASON, now);
         log.info("Closed account [id={}, number={}]", saved.getId(), saved.getAccountNumber());
+    }
+
+    private void validateCanCloseAccount(Account account) {
+        if (!account.getStatus().canTransitionTo(AccountStatus.CLOSED)
+                || account.getBalance().signum() > 0) {
+            return;
+        }
+        for (AccountClosureGuard guard : accountClosureGuards) {
+            guard.validateCanCloseAccount(account.getId());
+        }
     }
 
     private void recordStatusChangeAndPublishEvent(
