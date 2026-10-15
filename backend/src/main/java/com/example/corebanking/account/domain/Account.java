@@ -108,25 +108,51 @@ public class Account extends BaseEntity {
     }
 
     /**
-     * Closes the account if balance is exactly zero. Throws ACCOUNT_HAS_BALANCE (409) if balance >
+     * Transitions the account status according to the finite state machine ({@code ACTIVE <->
+     * LOCKED}, {@code ACTIVE | LOCKED -> CLOSED}). Rejects invalid transitions or transitions from
+     * terminal {@code CLOSED} state with {@code INVALID_STATUS_TRANSITION} (409), and enforces zero
+     * balance when transitioning to {@code CLOSED} with {@code ACCOUNT_HAS_BALANCE} (409).
+     */
+    public void changeStatus(AccountStatus targetStatus, Instant timestamp) {
+        Objects.requireNonNull(targetStatus, "targetStatus must not be null");
+        Objects.requireNonNull(timestamp, "timestamp must not be null");
+
+        if (!this.status.canTransitionTo(targetStatus)) {
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Invalid account status transition from "
+                            + this.status
+                            + " to "
+                            + targetStatus);
+        }
+
+        if (targetStatus == AccountStatus.CLOSED) {
+            if (balance.compareTo(BigDecimal.ZERO) > 0) {
+                throw new BusinessRuleException(
+                        ErrorCode.ACCOUNT_HAS_BALANCE,
+                        "Account balance must be zero before closing. Current balance: " + balance);
+            }
+            this.closedAt = timestamp;
+        }
+
+        this.status = targetStatus;
+    }
+
+    /**
+     * Closes the account if balance is exactly zero and current status is ACTIVE or LOCKED. Throws
+     * INVALID_STATUS_TRANSITION (409) if already CLOSED, or ACCOUNT_HAS_BALANCE (409) if balance >
      * 0.
      */
     public void close(Instant closedAtTimestamp) {
-        if (isClosed()) {
-            return;
-        }
-        if (balance.compareTo(BigDecimal.ZERO) > 0) {
-            throw new BusinessRuleException(
-                    ErrorCode.ACCOUNT_HAS_BALANCE,
-                    "Account balance must be zero before closing. Current balance: " + balance);
-        }
-        this.status = AccountStatus.CLOSED;
-        this.closedAt =
-                Objects.requireNonNull(closedAtTimestamp, "closedAtTimestamp must not be null");
+        changeStatus(AccountStatus.CLOSED, closedAtTimestamp);
     }
 
     public boolean isActive() {
         return this.status == AccountStatus.ACTIVE;
+    }
+
+    public boolean isLocked() {
+        return this.status == AccountStatus.LOCKED;
     }
 
     public boolean isClosed() {
