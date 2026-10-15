@@ -51,6 +51,7 @@ class RecurringTransactionSchedulerIT extends IntegrationTestBase {
     @Autowired private CustomerRepository customerRepository;
     @Autowired private Clock clock;
     @Autowired private JdbcClient jdbcClient;
+    @Autowired private jakarta.persistence.EntityManagerFactory entityManagerFactory;
 
     private final List<Long> createdRecurringIds = new ArrayList<>();
     private final List<Long> createdAccountIds = new ArrayList<>();
@@ -234,6 +235,33 @@ class RecurringTransactionSchedulerIT extends IntegrationTestBase {
         RecurringTransaction reloadedFuture =
                 recurringRepository.findById(futureDeposit.getId()).orElseThrow();
         assertThat(reloadedFuture.getLastRunAt()).isNull();
+
+        // Verify empty-queue poll executes exactly 1 SQL statement (SELECT ... FOR UPDATE SKIP
+        // LOCKED)
+        var statistics =
+                entityManagerFactory.unwrap(org.hibernate.SessionFactory.class).getStatistics();
+        statistics.setStatisticsEnabled(true);
+        statistics.clear();
+        assertThat(recurringTransactionJob.runDueTransactions()).isZero();
+        assertThat(statistics.getPrepareStatementCount()).isEqualTo(1L);
+
+        // Verify PostgreSQL planner uses LockRows + Index Scan on partial index idx_rec_due
+        jdbcClient.sql("SET enable_seqscan = off").update();
+        try {
+            List<String> explainLines =
+                    jdbcClient
+                            .sql(
+                                    "EXPLAIN SELECT * FROM core.recurring_transaction"
+                                            + " WHERE status = 'ACTIVE' AND next_run_at <="
+                                            + " CURRENT_TIMESTAMP ORDER BY next_run_at ASC, id ASC"
+                                            + " LIMIT 1 FOR UPDATE SKIP LOCKED")
+                            .query(String.class)
+                            .list();
+            String planText = String.join("\n", explainLines);
+            assertThat(planText).contains("idx_rec_due").contains("LockRows");
+        } finally {
+            jdbcClient.sql("RESET enable_seqscan").update();
+        }
     }
 
     @Test

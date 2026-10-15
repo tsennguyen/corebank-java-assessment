@@ -910,6 +910,11 @@ public class TransactionService {
             BigDecimal amount,
             String location,
             String description) {
+        if (transactionRepository.findByReferenceNo(referenceNo).isPresent()) {
+            throw new BusinessRuleException(
+                    ErrorCode.DUPLICATE_RESOURCE,
+                    "Scheduled transaction already executed for period reference: " + referenceNo);
+        }
         Money amountMoney = Money.of(amount);
         Transaction transaction;
 

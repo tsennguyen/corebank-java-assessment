@@ -1410,6 +1410,31 @@ class TransactionServiceTest {
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE);
             assertThat(activeSource.getBalance()).isEqualByComparingTo("5000000.00");
+
+            when(transactionRepository.findByReferenceNo("REC-4-20261015"))
+                    .thenReturn(
+                            Optional.of(
+                                    Transaction.createDeposit(
+                                            "REC-4-20261015",
+                                            1L,
+                                            new BigDecimal("100000.00"),
+                                            new BigDecimal("5100000.00"),
+                                            "HQ",
+                                            "Already executed")));
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.DEPOSIT,
+                                            "REC-4-20261015",
+                                            4L,
+                                            null,
+                                            1L,
+                                            new BigDecimal("100000.00"),
+                                            "HQ",
+                                            "Duplicate period"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.DUPLICATE_RESOURCE);
         }
     }
 }
