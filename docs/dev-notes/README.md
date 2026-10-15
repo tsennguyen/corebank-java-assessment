@@ -30,4 +30,5 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **3.3** | Advanced Transaction Search & Multi-Filter Indexing | L2-03, L2-04, G-05, FR-8, NFR-2 | [#28](https://github.com/tsennguyen/corebank-java-assessment/pull/28) | [3-3-advanced-transaction-search.md](3-3-advanced-transaction-search.md) |
 | **3.4** | Account Status Lifecycle & Immutable Audit History | L2-05, FR-3, FR-14, NFR-1 | [#29](https://github.com/tsennguyen/corebank-java-assessment/pull/29) | [3-4-account-status-lifecycle.md](3-4-account-status-lifecycle.md) |
 | **3.5** | Recurring Transaction Setup & Lifecycle Management | L2-06, FR-16, FR-2, G-05 | [#30](https://github.com/tsennguyen/corebank-java-assessment/pull/30) | [3-5-recurring-transaction-setup.md](3-5-recurring-transaction-setup.md) |
+| **3.6** | Recurring Transaction Scheduler | L2-07, FR-17, NFR-1, ADR-011 | [#31](https://github.com/tsennguyen/corebank-java-assessment/pull/31) | [3-6-recurring-transaction-scheduler.md](3-6-recurring-transaction-scheduler.md) |
 

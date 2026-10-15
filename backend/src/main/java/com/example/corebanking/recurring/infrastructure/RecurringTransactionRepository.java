@@ -4,6 +4,7 @@ import com.example.corebanking.recurring.domain.RecurringStatus;
 import com.example.corebanking.recurring.domain.RecurringTransaction;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
+import java.time.Instant;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -45,4 +46,24 @@ public interface RecurringTransactionRepository
                     + " r.targetAccountId = :accountId)")
     boolean existsByAccountIdAndStatus(
             @Param("accountId") Long accountId, @Param("status") RecurringStatus status);
+
+    /**
+     * Claims the next due {@code ACTIVE} recurring transaction instruction using PostgreSQL {@code
+     * FOR UPDATE SKIP LOCKED} so multiple concurrent worker threads/instances never pick the same
+     * row (L2-07, FR-17, ADR-011).
+     *
+     * @param now current timestamp threshold ({@code next_run_at <= :now})
+     * @return next due recurring transaction locked for update, or empty if none due/available
+     */
+    @Query(
+            value =
+                    """
+                    SELECT * FROM core.recurring_transaction
+                    WHERE status = 'ACTIVE' AND next_run_at <= :now
+                    ORDER BY next_run_at ASC, id ASC
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                    """,
+            nativeQuery = true)
+    Optional<RecurringTransaction> findNextDueForUpdateSkipLocked(@Param("now") Instant now);
 }

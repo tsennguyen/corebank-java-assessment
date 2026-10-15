@@ -878,4 +878,186 @@ public class TransactionService {
         }
         return "DEFAULT";
     }
+
+    /**
+     * Executes a scheduled recurring transaction instruction ({@code DEPOSIT}, {@code PAYMENT}, or
+     * {@code TRANSFER}) with pessimistic account locking in ascending ID order, limit validation,
+     * tiered fee calculation, deterministic {@code referenceNo} ({@code REC-{id}-{yyyyMMdd}}), and
+     * {@link TransactionCompletedEvent} publication (L2-07, FR-17, ADR-011).
+     *
+     * <p>All business rule validations are performed before mutating any {@link Account} entity in
+     * the persistence context, and {@code noRollbackFor} ensures that if a business rule or account
+     * lookup fails, the caller's transaction remains active so {@code failureCount} and {@code
+     * lastError} can be persisted cleanly on the recurring instruction.
+     *
+     * @param type transaction type ({@code DEPOSIT}, {@code PAYMENT}, or {@code TRANSFER})
+     * @param referenceNo deterministic period reference number ({@code REC-{id}-{yyyyMMdd}})
+     * @param recurringId originating recurring transaction ID
+     * @param sourceAccountId source account ID (required for {@code PAYMENT} and {@code TRANSFER})
+     * @param targetAccountId target account ID (required for {@code DEPOSIT} and {@code TRANSFER})
+     * @param amount positive transaction amount
+     * @param location optional location metadata
+     * @param description optional description metadata
+     * @return persisted transaction response
+     */
+    @Transactional(noRollbackFor = {BusinessRuleException.class, ResourceNotFoundException.class})
+    public TransactionResponse executeScheduledTransaction(
+            TransactionType type,
+            String referenceNo,
+            Long recurringId,
+            Long sourceAccountId,
+            Long targetAccountId,
+            BigDecimal amount,
+            String location,
+            String description) {
+        Money amountMoney = Money.of(amount);
+        Transaction transaction;
+
+        switch (type) {
+            case DEPOSIT -> {
+                Account target =
+                        accountRepository
+                                .findByIdForUpdate(targetAccountId)
+                                .orElseThrow(
+                                        () ->
+                                                new ResourceNotFoundException(
+                                                        "Account", targetAccountId));
+                target.credit(amountMoney);
+                transaction =
+                        Transaction.createDeposit(
+                                referenceNo,
+                                target.getId(),
+                                amountMoney.getAmount(),
+                                target.getBalance(),
+                                location,
+                                description,
+                                recurringId,
+                                "SYSTEM");
+            }
+            case PAYMENT -> {
+                Account source =
+                        accountRepository
+                                .findByIdForUpdate(sourceAccountId)
+                                .orElseThrow(
+                                        () ->
+                                                new ResourceNotFoundException(
+                                                        "Account", sourceAccountId));
+                BigDecimal dailySpent =
+                        transactionRepository.sumOutgoingAmountSince(
+                                source.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+                limitPolicy.validateLimits(source, amountMoney, Money.of(dailySpent));
+
+                Money fee = feePolicy.calculateFee(TransactionType.PAYMENT, amountMoney);
+                Money totalDebit = amountMoney.plus(fee);
+                source.debit(totalDebit);
+
+                transaction =
+                        Transaction.createPayment(
+                                referenceNo,
+                                source.getId(),
+                                amountMoney.getAmount(),
+                                fee.getAmount(),
+                                source.getBalance(),
+                                location,
+                                description,
+                                recurringId,
+                                "SYSTEM");
+            }
+            case TRANSFER -> {
+                if (sourceAccountId.equals(targetAccountId)) {
+                    throw new BusinessRuleException(
+                            ErrorCode.SAME_ACCOUNT_TRANSFER,
+                            "Source and target accounts cannot be identical");
+                }
+                Long firstId = Math.min(sourceAccountId, targetAccountId);
+                Long secondId = Math.max(sourceAccountId, targetAccountId);
+
+                Account firstAccount =
+                        accountRepository
+                                .findByIdForUpdate(firstId)
+                                .orElseThrow(
+                                        () -> new ResourceNotFoundException("Account", firstId));
+                Account secondAccount =
+                        accountRepository
+                                .findByIdForUpdate(secondId)
+                                .orElseThrow(
+                                        () -> new ResourceNotFoundException("Account", secondId));
+
+                Account source = sourceAccountId.equals(firstId) ? firstAccount : secondAccount;
+                Account target = targetAccountId.equals(firstId) ? firstAccount : secondAccount;
+
+                if (!source.isActive()) {
+                    throw new BusinessRuleException(
+                            ErrorCode.ACCOUNT_NOT_ACTIVE,
+                            "Account "
+                                    + source.getAccountNumber()
+                                    + " is not active (current status: "
+                                    + source.getStatus()
+                                    + ")");
+                }
+                if (!target.isActive()) {
+                    throw new BusinessRuleException(
+                            ErrorCode.ACCOUNT_NOT_ACTIVE,
+                            "Account "
+                                    + target.getAccountNumber()
+                                    + " is not active (current status: "
+                                    + target.getStatus()
+                                    + ")");
+                }
+
+                BigDecimal dailySpent =
+                        transactionRepository.sumOutgoingAmountSince(
+                                source.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+                limitPolicy.validateLimits(source, amountMoney, Money.of(dailySpent));
+
+                Money fee = feePolicy.calculateFee(TransactionType.TRANSFER, amountMoney);
+                Money totalDebit = amountMoney.plus(fee);
+
+                source.debit(totalDebit);
+                target.credit(amountMoney);
+
+                transaction =
+                        Transaction.createTransfer(
+                                referenceNo,
+                                source.getId(),
+                                target.getId(),
+                                amountMoney.getAmount(),
+                                fee.getAmount(),
+                                source.getBalance(),
+                                target.getBalance(),
+                                location,
+                                description,
+                                recurringId,
+                                "SYSTEM");
+            }
+            default ->
+                    throw new BusinessRuleException(
+                            ErrorCode.VALIDATION_FAILED,
+                            "Unsupported scheduled transaction type: " + type);
+        }
+
+        Transaction saved = transactionRepository.saveAndFlush(transaction);
+        eventPublisher.publishEvent(
+                new TransactionCompletedEvent(
+                        saved.getId(),
+                        saved.getReferenceNo(),
+                        saved.getType(),
+                        saved.getAmount(),
+                        saved.getFee(),
+                        saved.getSourceAccountId(),
+                        saved.getTargetAccountId(),
+                        clock.instant()));
+
+        log.info(
+                "Scheduled transaction completed [recurringId={}, txnId={}, ref={}, type={},"
+                        + " amount={}, fee={}]",
+                recurringId,
+                saved.getId(),
+                saved.getReferenceNo(),
+                saved.getType(),
+                saved.getAmount(),
+                saved.getFee());
+
+        return TransactionResponse.from(saved);
+    }
 }
