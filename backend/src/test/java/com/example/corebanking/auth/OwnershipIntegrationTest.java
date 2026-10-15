@@ -235,5 +235,44 @@ class OwnershipIntegrationTest extends IntegrationTestBase {
                         get("/api/v1/transactions/" + txBinhOnlyId)
                                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken))
                 .andExpect(status().isOk());
+
+        // 6. Risk #4: Customer with 0 accounts gets empty list on /api/v1/me/accounts and empty
+        // page on /api/v1/transactions without SQL IN () syntax error
+        Long customerEmptyId =
+                jdbcClient
+                        .sql(
+                                "INSERT INTO core.customer (customer_code, full_name, national_id,"
+                                        + " email, phone, address, location, date_of_birth) VALUES"
+                                        + " ('CUS8000099', 'Lê Văn Trống', '079099000999',"
+                                        + " 'trong.le@example.com', '0908000099', '99 Đường Mẫu',"
+                                        + " 'Đà Nẵng', '1995-01-01') RETURNING id")
+                        .query(Long.class)
+                        .single();
+        String custAnHash =
+                jdbcClient
+                        .sql("SELECT password_hash FROM core.app_user WHERE username = 'cust.an'")
+                        .query(String.class)
+                        .single();
+        jdbcClient
+                .sql(
+                        "INSERT INTO core.app_user (username, password_hash, role, customer_id,"
+                                + " enabled) VALUES ('cust.empty', :hash, 'CUSTOMER', :cid, TRUE)")
+                .param("hash", custAnHash)
+                .param("cid", customerEmptyId)
+                .update();
+        String tokenEmpty = loginAndGetToken("cust.empty", "Customer@123");
+
+        mockMvc.perform(
+                        get("/api/v1/me/accounts")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenEmpty))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+
+        mockMvc.perform(
+                        get("/api/v1/transactions")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenEmpty))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", hasSize(0)))
+                .andExpect(jsonPath("$.totalElements").value(0));
     }
 }

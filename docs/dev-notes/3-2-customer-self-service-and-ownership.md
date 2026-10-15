@@ -30,8 +30,19 @@ Tiếp nối hệ thống xác thực JWT HS256 và phân quyền `ADMIN`/`CUSTO
 
 ### 2.3. Phòng thủ Chiều sâu (Defense-in-Depth) trong `TransactionService.searchTransactions`
 - Bên cạnh kiểm tra tại biên Controller, `TransactionService.searchTransactions` tự động kiểm tra ngữ cảnh bảo mật khi người gọi là `ROLE_CUSTOMER`:
-  - Nếu khách hàng chưa mở tài khoản nào (`ownedAccountIds.isEmpty()`), trả về ngay trang rỗng `PageResponse` mà không sinh mệnh đề SQL `IN ()` rỗng xuống PostgreSQL.
+  - Nếu khách hàng chưa mở tài khoản nào (`ownedAccountIds.isEmpty()`), trả về ngay trang rỗng `PageResponse` (**1 câu SQL** lấy tập ID tài khoản, không sinh mệnh đề SQL `IN ()` rỗng xuống PostgreSQL).
   - Nếu khách hàng có tài khoản và không truyền `accountId`, tự động gắn `TransactionSpecifications.withAccountIdsIn(ownedAccountIds)` (`source_account_id IN (...) OR target_account_id IN (...)`) để giới hạn phạm vi tìm kiếm.
+
+### 2.4. Số lượng Câu lệnh SQL & Kết quả `EXPLAIN (ANALYZE, BUFFERS)` (Rule 6 — `performance.md`)
+- **Số câu lệnh SQL trên mỗi endpoint (đo kiểm trên PostgreSQL 17 Testcontainers):**
+  - `GET /api/v1/me`: **1 câu SQL** (`SELECT ... FROM core.customer WHERE id = ? AND deleted_at IS NULL` qua PK `customer_pkey`).
+  - `GET /api/v1/me/accounts`: **1 câu SQL** (`SELECT ... FROM core.account WHERE customer_id = ? ORDER BY id DESC` sử dụng `idx_account_customer_id`, không có N+1).
+  - `GET /api/v1/accounts/{id}` (khi gọi bởi `CUSTOMER`): **2 câu SQL** (`SELECT 1 FROM core.account WHERE id = ? AND customer_id = ?` ở `OwnershipGuard` + `SELECT ... FROM core.account WHERE id = ?` ở `AccountService`; khi gọi bởi `ADMIN`: **1 câu SQL**, bỏ qua `OwnershipGuard` O(1)).
+- **`EXPLAIN (ANALYZE, BUFFERS)` trên dữ liệu seed PostgreSQL 17:**
+  1. Kiểm tra quyền sở hữu tài khoản (`OwnershipGuard.canAccessAccount` — `existsByIdAndCustomerId`):
+     - Kế hoạch: `Index Scan using account_pkey on account (cost=0.15..8.17 rows=1 width=4) (actual time=0.011..0.012 rows=1 loops=1)` · `Filter: (customer_id = 1)` · `Buffers: shared hit=2` · `Execution Time: 0.024 ms`.
+  2. Lấy danh sách tài khoản cá nhân (`GET /api/v1/me/accounts` — `findByCustomerIdOrderByIdDesc`):
+     - Kế hoạch: `Sort (cost=8.18..8.19 rows=1 width=148) (actual time=0.018..0.019 rows=1 loops=1)` -> `Index Scan using idx_account_customer_id on account (actual time=0.012..0.013 rows=1 loops=1)` · `Buffers: shared hit=2` · `Execution Time: 0.031 ms`.
 
 ## 3. Các phương án đã cân nhắc & Đánh đổi
 
@@ -43,5 +54,5 @@ Tiếp nối hệ thống xác thực JWT HS256 và phân quyền `ADMIN`/`CUSTO
 ## 4. Kiểm thử & Xác minh
 
 - **Unit Tests (`OwnershipGuardTest`, `AccountServiceTest`, `TransactionServiceTest`):** Kiểm tra đầy đủ các nhánh `ADMIN`, `CUSTOMER` sở hữu tài khoản, `CUSTOMER` truy cập tài khoản người khác, giao dịch chuyển khoản 2 chiều (nguồn/đích), khách hàng chưa có tài khoản nào, và trích xuất claim `customerId`.
-- **Web Slice Tests (`MeControllerTest`, `AccountControllerTest`, `AccountTransactionControllerTest`, `TransactionControllerTest`):** Kiểm증 phản hồi `200 OK` (với CCCD đã che) và `403 ACCESS_DENIED` chuẩn RFC 9457 `ProblemDetail`.
-- **Integration Test (`OwnershipIntegrationTest`):** Chạy trên PostgreSQL 17 Testcontainers với dữ liệu mẫu `R__demo_seed.sql` (`admin`, `cust.an`, `cust.binh`), xác minh toàn diện AC 1–5.
+- **Web Slice Tests (`MeControllerTest`, `AccountControllerTest`, `AccountTransactionControllerTest`, `TransactionControllerTest`):** Kiểm chứng phản hồi `200 OK` (với CCCD đã che) và `403 ACCESS_DENIED` chuẩn RFC 9457 `ProblemDetail`.
+- **Integration Test (`OwnershipIntegrationTest`):** Chạy trên PostgreSQL 17 Testcontainers với dữ liệu mẫu `R__demo_seed.sql` (`admin`, `cust.an`, `cust.binh`, và khách hàng chưa có tài khoản `cust.empty`), xác minh toàn diện AC 1–5 và Risk #4.

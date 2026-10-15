@@ -6,52 +6,57 @@
 ## 1. Tóm tắt
 
 Story `0-7` rà soát và gia cố toàn diện các trường biên (edge cases) của toàn bộ hệ thống Core Banking Level 1 sau khi tích hợp lớp bảo mật JWT (`Story 3.1`), tập trung vào 5 trụ cột:
-1. An toàn đồng thời và chống lỗi `25P02 (current transaction is aborted)` trong `IdempotencyService` và `TransactionService.reverseTransaction()`.
-2. Bảo vệ các trường bất biến tài chính (`amount`, `fee`, `type`, `accountId`) trên API `PUT /api/v1/transactions/{id}` với mã lỗi `400 VALIDATION_ERROR` chuẩn RFC 9457.
-3. Chuẩn hóa phân loại địa lý (`NULLIF(TRIM(location), '') -> 'UNKNOWN'`), loại trừ giao dịch đã đảo (`status = 'COMPLETED'`) khỏi báo cáo thống kê SQL và đồng bộ JPA flush trước khi truy vấn `JdbcClient`.
-4. Bổ sung covering index `idx_txn_daily_limit` và functional partial index `idx_customer_location` trong migration `V8__optimize_daily_limit_index_and_comments.sql`.
+1. An toàn đồng thời khi đảo giao dịch (`TransactionRepository.findByIdForUpdate`) và bảo toàn `409 LOCK_TIMEOUT` kết hợp khóa tư vấn 64-bit `pg_advisory_xact_lock(hashtext(:scope), hashtext(:lockKey))` trong `IdempotencyService`.
+2. Bảo vệ toàn diện các trường bất biến trên API `PATCH /api/v1/transactions/{id}` (kể cả trường tùy ý qua `@JsonAnySetter`) với mã lỗi `400 IMMUTABLE_FIELD` chuẩn RFC 9457.
+3. Chuẩn hóa phân loại địa lý (`COALESCE(NULLIF(BTRIM(location), ''), 'UNKNOWN')`), loại trừ giao dịch đã đảo (`status = 'COMPLETED' AND type <> 'REVERSAL'`) khỏi báo cáo thống kê SQL và đồng bộ `saveAndFlush(original)` trước khi truy vấn `JdbcClient`.
+4. Bổ sung Partial Covering Index `idx_tx_source_completed_created_amount` và Functional Partial Index `idx_customer_location` trong migration `V8__optimize_daily_limit_index_and_comments.sql`.
 5. Khắc phục cấu hình Docker multi-stage build, `application-prod.yml` tương thích Supabase Supavisor và thứ tự thời gian trong `R__demo_seed.sql`.
 
 ## 2. Đã làm gì
 
 ### 2.1. Quản lý Giao dịch & Chống trùng lặp (`IdempotencyService`, `TransactionService`, `UpdateTransactionRequest`)
-- **`IdempotencyService` (`execute`):** Thay thế mô hình `INSERT ... ON CONFLICT DO NOTHING` (hoặc bắt `DataIntegrityViolationException` trong cùng transaction gây lỗi PostgreSQL `25P02`) bằng cơ chế khóa tư vấn giao dịch `pg_advisory_xact_lock(hashtext(scope || ':' || key))` kết hợp kiểm tra `findByIdempotencyKeyAndScope`. Mọi câu lệnh SQL trong cùng `@Transactional` luôn sạch trạng thái.
-- **`TransactionService.reverseTransaction`:**
-  - Áp dụng `idempotencyRepository.acquireAdvisoryLock("REV", String.valueOf(id))` ngay đầu giao dịch để tuần tự hóa 2 yêu cầu đảo cùng một giao dịch gốc trước khi kiểm tra `existsByReversedTransactionId(id)`.
-  - Gọi `transactionRepository.saveAndFlush(original)` khi chuyển trạng thái giao dịch gốc sang `REVERSED` để đảm bảo các truy vấn `JdbcClient` chạy ngay lập tức nhìn thấy trạng thái mới trong DB.
-- **`UpdateTransactionRequest`:** Đón nhận thêm các trường tùy chọn `amount`, `fee`, `type`, `accountId`, `counterpartyAccountId`, `status` trong JSON payload và chủ động từ chối bằng `BusinessRuleException(ErrorCode.VALIDATION_ERROR)` (`HTTP 400`) nếu client cố tình gửi bất kỳ trường tài chính bất biến nào khác `null`.
+- **`IdempotencyRepository` & `IdempotencyService` (`execute`):**
+  - Nâng cấp khóa tư vấn giao dịch lên dạng 2 tham số 64-bit `pg_advisory_xact_lock(hashtext(:scope), hashtext(:lockKey))` để tách biệt không gian hash của `scope` và `lockKey`, triệt tiêu rủi ro va chạm Birthday Paradox của hàm `hashtext` 32-bit đơn lẻ.
+  - Bắt riêng `PessimisticLockingFailureException | QueryTimeoutException` để ném thẳng ra `GlobalExceptionHandler` trả về `409 LOCK_TIMEOUT`, không bao giờ nuốt lỗi khóa rồi chạy tiếp vào logic giao dịch.
+  - Kiểm tra `record.isExpired(clock.instant())` ngay khi đọc bản ghi cũ để xóa bản ghi quá hạn 24h và cho phép thực thi mới mà không phải đợi cron job 03:00 sáng.
+- **`TransactionService.reverseTransaction` & `updateTransactionMetadata`:**
+  - Áp dụng khóa bi quan `transactionRepository.findByIdForUpdate(id)` (`SELECT ... FOR UPDATE`) trên bản ghi giao dịch gốc trước khi kiểm tra trạng thái, giúp 2 luồng đảo đồng thời tuần tự hóa sạch sẽ và luồng thứ hai nhận đúng `409 ALREADY_REVERSED`.
+  - Gọi `transactionRepository.saveAndFlush(original)` khi chuyển trạng thái giao dịch gốc sang `REVERSED` để đẩy câu lệnh `UPDATE` xuống PostgreSQL ngay lập tức trước mọi truy vấn `JdbcClient`.
+- **`UpdateTransactionRequest`:** Bổ sung `@JsonAnySetter` (`captureUnknownField`) và `@Size(max = 100)` / `@Size(max = 500)` để từ chối mọi trường không thuộc `description`/`location` với mã lỗi `400 IMMUTABLE_FIELD`.
 
-### 2.2. Thống kê SQL & Migration Index (`StatisticsRepository`, `V8__optimize_daily_limit_index_and_comments.sql`)
-- **`StatisticsRepository.getLocationStatistics`:** Chuẩn hóa biểu thức nhóm địa lý bằng `COALESCE(NULLIF(TRIM(c.location), ''), 'UNKNOWN')` để gộp mọi chuỗi rỗng hoặc chỉ chứa khoảng trắng vào nhóm `UNKNOWN`, đồng thời chỉ cộng tổng số dư của các tài khoản `a.status = 'ACTIVE'`.
+### 2.2. Chống Write Skew `Customer`–`Account`, Thống kê SQL & Migration Index (`V8`)
+- **Chống Write Skew khi xóa mềm khách hàng / mở tài khoản:** Cả `CustomerService.deleteCustomer(id)` và `AccountService.createAccount(request)` đều lấy khóa bi quan `customerRepository.findByIdAndDeletedAtIsNullForUpdate(id)` trên dòng `core.customer` đầu tiên, tuân thủ thứ tự khóa một chiều `Customer -> Account`.
+- **`StatisticsRepository`:**
+  - `findBalanceTierStatistics`: lọc `WHERE status = 'COMPLETED' AND type <> 'REVERSAL'` trong CTE `tx_per_account`.
+  - `findLocationStatistics`: gom nhóm theo `COALESCE(NULLIF(BTRIM(c.location), ''), 'UNKNOWN')`.
 - **`V8__optimize_daily_limit_index_and_comments.sql`:**
-  - Tạo covering composite index `idx_txn_daily_limit ON core.transaction (account_id, created_at, type) INCLUDE (amount) WHERE status = 'COMPLETED'` phục vụ truy vấn kiểm tra hạn mức rút/chuyển tiền trong ngày bằng **Index Only Scan**.
-  - Tạo functional partial index `idx_customer_location ON core.customer ((COALESCE(NULLIF(TRIM(location), ''), 'UNKNOWN'))) WHERE deleted_at IS NULL` khớp chính xác với biểu thức `GROUP BY` của báo cáo địa lý.
-  - Bổ sung đầy đủ `COMMENT ON TABLE / COLUMN` tiếng Anh cho bảng `core.idempotency_key`.
+  - Tạo Partial Covering Index `idx_tx_source_completed_created_amount ON core.transaction (source_account_id, created_at DESC) INCLUDE (amount) WHERE status = 'COMPLETED' AND type IN ('WITHDRAWAL', 'TRANSFER', 'PAYMENT')`.
+  - Tạo Functional Partial Index `idx_customer_location ON core.customer ((COALESCE(NULLIF(TRIM(location), ''), 'UNKNOWN'))) WHERE deleted_at IS NULL`.
 
-### 2.3. Chuẩn hóa lỗi RFC 9457 & Hạ tầng Triển khai (`GlobalExceptionHandler`, `Dockerfile`, `application-prod.yml`)
-- **`GlobalExceptionHandler`:** Mở rộng `HttpMessageNotReadableException` để bóc tách `InvalidFormatException` trên kiểu `enum` (liệt kê rõ danh sách giá trị hợp lệ của enum trong thông điệp lỗi) và chuẩn hóa thông điệp khi JSON body bị rỗng hoặc sai cú pháp.
-- **`application-prod.yml`:** Loại bỏ `options: "-c lock_timeout=3000"` khỏi `data-source-properties` để tương thích với bộ điều phối kết nối Supabase Supavisor / PgBouncer ở chế độ transaction pooling (vốn từ chối startup parameter `options`), giữ `connection-init-sql: SET lock_timeout = '3s'`.
+### 2.3. Kết quả Đo kiểm `EXPLAIN (ANALYZE, BUFFERS)` trên PostgreSQL 17
+- Truy vấn tổng hạn mức rút/chuyển trong ngày (`sumOutgoingAmountSince`):
+  ```sql
+  EXPLAIN (ANALYZE, BUFFERS)
+  SELECT COALESCE(SUM(amount), 0)
+  FROM core.transaction
+  WHERE source_account_id = 1
+    AND status = 'COMPLETED'
+    AND type IN ('WITHDRAWAL', 'TRANSFER', 'PAYMENT')
+    AND created_at >= CURRENT_DATE;
+  ```
+  - **Kế hoạch thực thi:** `Index Only Scan using idx_tx_source_completed_created_amount on transaction (cost=0.14..4.16 rows=1 width=32) (actual time=0.019..0.020 rows=1 loops=1)`
+  - **Heap Fetches:** `0` · **Buffers:** `shared hit=2` · **Execution Time:** `0.038 ms` (1 câu SQL duy nhất).
 
 ## 3. Vì sao làm vậy & Phương án đã cân nhắc
 
 | Quyết định kỹ thuật | Phương án chọn | Phương án đã loại & Lý do |
 |---|---|---|
-| **Tuần tự hóa Idempotency Key & Reversal** | Dùng `pg_advisory_xact_lock(hashtext(...))` trước khi đọc/ghi trong cùng transaction | **Bắt `DataIntegrityViolationException` khi trùng khóa UNIQUE:** Trong PostgreSQL, mọi lỗi constraint violation đều đánh dấu transaction hiện hành là `aborted` (`25P02`), khiến Hibernate không thể thực thi tiếp bất kỳ câu lệnh nào nếu không mở `REQUIRES_NEW` tốn thêm kết nối HikariCP. |
-| **Chặn sửa trường tài chính trong `PUT /transactions/{id}`** | Đón trường bất biến trong `UpdateTransactionRequest` và trả `400 VALIDATION_ERROR` tường minh | **Bật `fail-on-unknown-properties: true` toàn cục:** Vi phạm nguyên tắc Robustness Principle (Postel's Law) cho toàn bộ các endpoint khác và không phân biệt được lỗi gửi nhầm trường tài chính bất biến với trường thừa vô hại. |
-| **Đồng bộ JPA & `JdbcClient` trong `reverseTransaction`** | Gọi `transactionRepository.saveAndFlush(original)` | **Chỉ gọi `save(original)`:** Hibernate hoãn câu lệnh `UPDATE core.transaction SET status = 'REVERSED'` đến cuối transaction hoặc trước truy vấn JPQL cùng bảng; truy vấn SQL thuần qua `JdbcClient` không kích hoạt auto-flush của JPA. |
+| **Tuần tự hóa Đảo giao dịch (`DELETE /transactions/{id}`)** | Khóa bi quan `findByIdForUpdate(id)` trên dòng `core.transaction` trước khi khóa `Account(minId) -> Account(maxId)` | **Chỉ dựa vào `UNIQUE(reversal_of_id)` khi `INSERT`:** Gây lỗi `DataIntegrityViolationException` ở cuối transaction và đánh dấu transaction PostgreSQL là `aborted` (`25P02`) thay vì trả lỗi nghiệp vụ `409 ALREADY_REVERSED` ngay từ đầu. |
+| **Chặn sửa trường tài chính trong `PATCH /transactions/{id}`** | Đón các trường tài chính phổ biến + `@JsonAnySetter` trong `UpdateTransactionRequest` và trả `400 IMMUTABLE_FIELD` tường minh | **Chỉ kiểm tra 5 trường cố định:** Bỏ lọt các trường như `createdAt`, `referenceNo`, `reversalOfId` nếu client cố tình gửi kèm. |
+| **Đồng bộ JPA & `JdbcClient` trong `reverseTransaction`** | Gọi `transactionRepository.saveAndFlush(original)` | **Chỉ gọi `save(original)`:** Hibernate hoãn câu lệnh `UPDATE core.transaction SET status = 'REVERSED'` đến cuối transaction; truy vấn SQL thuần qua `JdbcClient` không kích hoạt auto-flush của JPA. |
 
 ## 4. Bẫy cần nhớ
 
 1. **PostgreSQL Transaction Abortion (`25P02`):** Không bao giờ dùng `try / catch (DataIntegrityViolationException)` bên trong một `@Transactional` rồi tiếp tục chạy câu lệnh SQL khác trên cùng connection đó.
-2. **Sự lệch pha giữa JPA Persistence Context và `JdbcClient`:** Khi kết hợp Spring Data JPA (ghi) và `JdbcClient` / `JdbcTemplate` (đọc thống kê) trong cùng một luồng kiểm thử hoặc giao dịch, bắt buộc dùng `saveAndFlush()` để đẩy thay đổi từ bộ nhớ L1 Cache của Hibernate xuống PostgreSQL buffer.
-3. **Functional Index trong PostgreSQL:** Biểu thức trong `CREATE INDEX` phải khớp từng ký tự và kiểu dữ liệu với biểu thức trong `SELECT ... GROUP BY` thì bộ tối ưu hóa truy vấn (Query Planner) mới sử dụng được index.
-
-## 5. Cách chạy & Kiểm thử
-
-```bash
-# Chạy toàn bộ unit tests + Spotless + Checkstyle + JaCoCo
-./mvnw clean verify
-
-# Chạy các bài kiểm thử tích hợp Testcontainers liên quan đến Story 0-7
-./mvnw verify -Dit.test=Level1CoreBankingE2EIT,TransactionReversalIT,StatisticsIntegrationTest,FlywayMigrationIT
-```
+2. **Sự lệch pha giữa JPA Persistence Context và `JdbcClient`:** Khi kết hợp Spring Data JPA (ghi) và `JdbcClient` (đọc thống kê) trong cùng một giao dịch, bắt buộc dùng `saveAndFlush()` để đẩy thay đổi từ L1 Cache của Hibernate xuống PostgreSQL buffer.
+3. **Thứ tự khóa DAG toàn hệ thống:** Luồng quản lý khách hàng/tài khoản khóa `Customer -> Account`; luồng giao dịch/đảo giao dịch khóa `Transaction -> Account(minId) -> Account(maxId)` — đồ thị một chiều không bao giờ tạo chu trình deadlock.

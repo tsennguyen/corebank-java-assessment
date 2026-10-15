@@ -29,6 +29,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -718,7 +723,7 @@ public class TransactionService {
         Specification<Transaction> spec =
                 TransactionSpecifications.withAccountId(criteria.accountId())
                         .and(TransactionSpecifications.withType(criteria.type()));
-        if (customerAccountIds != null) {
+        if (criteria.accountId() == null && customerAccountIds != null) {
             spec = spec.and(TransactionSpecifications.withAccountIdsIn(customerAccountIds));
         }
 
@@ -727,9 +732,7 @@ public class TransactionService {
     }
 
     private Set<Long> resolveRestrictedCustomerAccountIds(Long requestedAccountId) {
-        org.springframework.security.core.Authentication auth =
-                org.springframework.security.core.context.SecurityContextHolder.getContext()
-                        .getAuthentication();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) {
             return null;
         }
@@ -747,12 +750,11 @@ public class TransactionService {
 
         Long customerId = extractCustomerIdFromAuth(auth);
         if (customerId == null) {
-            throw new org.springframework.security.access.AccessDeniedException(
-                    "Customer token is missing customerId claim");
+            throw new AccessDeniedException("Customer token is missing customerId claim");
         }
         if (requestedAccountId != null) {
             if (!accountRepository.existsByIdAndCustomerId(requestedAccountId, customerId)) {
-                throw new org.springframework.security.access.AccessDeniedException(
+                throw new AccessDeniedException(
                         "You do not have permission to access this resource");
             }
             return Set.of(requestedAccountId);
@@ -761,9 +763,9 @@ public class TransactionService {
         return ownedIds != null ? ownedIds : Set.of();
     }
 
-    private Long extractCustomerIdFromAuth(org.springframework.security.core.Authentication auth) {
+    private Long extractCustomerIdFromAuth(Authentication auth) {
         Object principal = auth.getPrincipal();
-        if (principal instanceof org.springframework.security.oauth2.jwt.Jwt jwt) {
+        if (principal instanceof Jwt jwt) {
             Object claim = jwt.getClaim("customerId");
             if (claim instanceof Number number) {
                 return number.longValue();
@@ -782,7 +784,7 @@ public class TransactionService {
     private PageResponse<TransactionResponse> emptyPageResponse(Pageable pageable) {
         int page = pageable.isUnpaged() ? 0 : pageable.getPageNumber();
         int size = pageable.isUnpaged() ? 0 : pageable.getPageSize();
-        return new PageResponse<>(java.util.List.of(), page, size, 0L, 0);
+        return new PageResponse<>(List.of(), page, size, 0L, 0);
     }
 
     private Pageable resolvePageable(Pageable pageable) {
@@ -826,9 +828,7 @@ public class TransactionService {
     }
 
     static String resolveCurrentScope() {
-        org.springframework.security.core.Authentication auth =
-                org.springframework.security.core.context.SecurityContextHolder.getContext()
-                        .getAuthentication();
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null
                 && auth.isAuthenticated()
                 && auth.getName() != null
