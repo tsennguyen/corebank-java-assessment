@@ -9,12 +9,14 @@ import com.example.corebanking.account.domain.Account;
 import com.example.corebanking.account.domain.AccountStatus;
 import com.example.corebanking.account.domain.AccountStatusHistory;
 import com.example.corebanking.account.domain.BalanceTierPolicy;
+import com.example.corebanking.account.domain.event.AccountLimitsUpdatedEvent;
 import com.example.corebanking.account.domain.event.AccountStatusChangedEvent;
 import com.example.corebanking.account.infrastructure.AccountNumberGenerator;
 import com.example.corebanking.account.infrastructure.AccountRepository;
 import com.example.corebanking.account.infrastructure.AccountSpecifications;
 import com.example.corebanking.account.infrastructure.AccountStatusHistoryRepository;
 import com.example.corebanking.common.api.PageResponse;
+import com.example.corebanking.common.config.CacheConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
@@ -27,6 +29,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -177,8 +180,11 @@ public class AccountService {
     }
 
     /**
-     * Retrieves all accounts owned by a specific customer ordered by ID descending (L2-01, FR-14).
+     * Retrieves all accounts owned by a specific customer ordered by ID descending (L2-01, L2-08,
+     * FR-14). Cached in {@code accountsByCustomer} and evicted after commit when account or balance
+     * changes occur.
      */
+    @Cacheable(cacheNames = CacheConfig.ACCOUNTS_BY_CUSTOMER_CACHE, key = "#customerId")
     public List<AccountResponse> getAccountsByCustomerId(Long customerId) {
         return accountRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
                 .map(
@@ -190,8 +196,12 @@ public class AccountService {
 
     /**
      * Retrieves accounts owned by a specific customer filtered by optional status, ordered by ID
-     * descending (L2-01, FR-14).
+     * descending (L2-01, L2-08, FR-14).
      */
+    @Cacheable(
+            cacheNames = CacheConfig.ACCOUNTS_BY_CUSTOMER_CACHE,
+            key = "#customerId",
+            condition = "#status == null")
     public List<AccountResponse> getAccountsByCustomerId(Long customerId, AccountStatus status) {
         if (status == null) {
             return getAccountsByCustomerId(customerId);
@@ -254,6 +264,11 @@ public class AccountService {
 
         account.updateLimits(request.transactionLimit(), request.dailyLimit());
         Account updated = accountRepository.saveAndFlush(account);
+        if (eventPublisher != null && updated.getCustomerId() != null) {
+            eventPublisher.publishEvent(
+                    new AccountLimitsUpdatedEvent(
+                            updated.getId(), updated.getCustomerId(), clock.instant()));
+        }
         log.info(
                 "Updated limits on account [id={}, number={}]",
                 updated.getId(),
