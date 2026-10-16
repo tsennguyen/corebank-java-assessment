@@ -38,6 +38,11 @@ app:
   idempotency:
     ttl-hours: 24
     cleanup-cron: "0 0 3 * * *"
+  recurring:
+    cron: "0 * * * * *"
+    batch-size: 50
+    max-failures: 3
+    scheduler-enabled: true
   statistics:
     balance-tiers:
       medium-threshold: 10000000.00

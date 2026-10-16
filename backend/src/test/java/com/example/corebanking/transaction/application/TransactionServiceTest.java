@@ -1341,5 +1341,100 @@ class TransactionServiceTest {
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.VALIDATION_FAILED);
         }
+
+        @Test
+        @DisplayName(
+                "executeScheduledTransaction validates same account, inactive source/target, and"
+                        + " unsupported type before mutating balances (L2-07)")
+        void executeScheduledTransaction_edgeCases_shouldValidateBeforeMutating() {
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.TRANSFER,
+                                            "REC-1-20261015",
+                                            1L,
+                                            10L,
+                                            10L,
+                                            new BigDecimal("100000.00"),
+                                            "HQ",
+                                            "Same account"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.SAME_ACCOUNT_TRANSFER);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.WITHDRAWAL,
+                                            "REC-2-20261015",
+                                            2L,
+                                            10L,
+                                            null,
+                                            new BigDecimal("100000.00"),
+                                            "HQ",
+                                            "Unsupported"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            Account activeSource =
+                    createAccount(
+                            1L,
+                            new BigDecimal("5000000.00"),
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"));
+            Account lockedTarget =
+                    createAccount(
+                            2L,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"));
+            lockedTarget.changeStatus(
+                    com.example.corebanking.account.domain.AccountStatus.LOCKED, Instant.now());
+
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(activeSource));
+            when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(lockedTarget));
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.TRANSFER,
+                                            "REC-3-20261015",
+                                            3L,
+                                            1L,
+                                            2L,
+                                            new BigDecimal("500000.00"),
+                                            "HQ",
+                                            "Target locked"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE);
+            assertThat(activeSource.getBalance()).isEqualByComparingTo("5000000.00");
+
+            when(transactionRepository.findByReferenceNo("REC-4-20261015"))
+                    .thenReturn(
+                            Optional.of(
+                                    Transaction.createDeposit(
+                                            "REC-4-20261015",
+                                            1L,
+                                            new BigDecimal("100000.00"),
+                                            new BigDecimal("5100000.00"),
+                                            "HQ",
+                                            "Already executed")));
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.DEPOSIT,
+                                            "REC-4-20261015",
+                                            4L,
+                                            null,
+                                            1L,
+                                            new BigDecimal("100000.00"),
+                                            "HQ",
+                                            "Duplicate period"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.DUPLICATE_RESOURCE);
+        }
     }
 }
