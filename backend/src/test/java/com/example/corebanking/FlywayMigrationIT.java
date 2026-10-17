@@ -448,4 +448,49 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V13 alert migration creating core.alert table, unique constraint, and"
+                    + " B-tree indexes")
+    void flywayMigration_shouldApplyV13AlertSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT version, description, type, script, success "
+                                    + "FROM core.flyway_schema_history "
+                                    + "WHERE version = '13'")) {
+                assertThat(rs.next())
+                        .as("Migration version 13 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script")).isEqualTo("V13__alert.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs = connection.getMetaData().getTables(null, "core", "alert", null)) {
+                assertThat(rs.next()).as("Table 'alert' should exist in schema 'core'").isTrue();
+            }
+
+            for (String indexName :
+                    new String[] {
+                        "uk_alert_tx_rule",
+                        "idx_alert_status_created",
+                        "idx_alert_account_created",
+                        "idx_alert_rule_created",
+                        "idx_alert_created"
+                    }) {
+                try (ResultSet rs =
+                        statement.executeQuery(
+                                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core' AND"
+                                        + " indexname = '"
+                                        + indexName
+                                        + "'")) {
+                    assertThat(rs.next())
+                            .as("Index %s should exist in schema 'core'", indexName)
+                            .isTrue();
+                }
+            }
+        }
+    }
 }
