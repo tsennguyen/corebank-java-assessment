@@ -10,10 +10,13 @@ import com.example.corebanking.customer.api.dto.CreateCustomerRequest;
 import com.example.corebanking.customer.api.dto.CustomerResponse;
 import com.example.corebanking.customer.api.dto.UpdateCustomerRequest;
 import com.example.corebanking.customer.domain.Customer;
+import com.example.corebanking.customer.domain.CustomerType;
 import com.example.corebanking.customer.infrastructure.CustomerCodeGenerator;
 import com.example.corebanking.customer.infrastructure.CustomerRepository;
 import com.example.corebanking.customer.infrastructure.CustomerSpecifications;
+import com.example.corebanking.customer.infrastructure.CustomerTypeRepository;
 import java.time.Clock;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -28,8 +31,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Application service managing Customer lifecycle, search filtering, optimistic concurrency, and
- * soft-deletion.
+ * Application service managing Customer lifecycle, classification assignment, search filtering,
+ * optimistic concurrency, and soft-deletion.
  */
 @Service
 @Transactional(readOnly = true)
@@ -37,29 +40,40 @@ public class CustomerService {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerService.class);
     private static final Set<String> ALLOWED_SORT_FIELDS =
-            Set.of("id", "customerCode", "fullName", "location", "createdAt");
+            Set.of("id", "customerCode", "fullName", "location", "customerTypeCode", "createdAt");
 
     private final CustomerRepository customerRepository;
     private final CustomerCodeGenerator customerCodeGenerator;
     private final Clock clock;
     private final CustomerDeletionGuard customerDeletionGuard;
+    private final CustomerTypeRepository customerTypeRepository;
+
+    public CustomerService(
+            CustomerRepository customerRepository,
+            CustomerCodeGenerator customerCodeGenerator,
+            Clock clock,
+            CustomerDeletionGuard customerDeletionGuard) {
+        this(customerRepository, customerCodeGenerator, clock, customerDeletionGuard, null);
+    }
 
     @Autowired
     public CustomerService(
             CustomerRepository customerRepository,
             CustomerCodeGenerator customerCodeGenerator,
             Clock clock,
-            CustomerDeletionGuard customerDeletionGuard) {
+            CustomerDeletionGuard customerDeletionGuard,
+            CustomerTypeRepository customerTypeRepository) {
         this.customerRepository = customerRepository;
         this.customerCodeGenerator = customerCodeGenerator;
         this.clock = clock;
         this.customerDeletionGuard =
                 Objects.requireNonNull(
                         customerDeletionGuard, "customerDeletionGuard must not be null");
+        this.customerTypeRepository = customerTypeRepository;
     }
 
     /**
-     * Registers a new customer after verifying national identity uniqueness.
+     * Registers a new customer after verifying national identity uniqueness and customer type code.
      *
      * @param request creation parameters
      * @return persisted customer representation with masked national ID
@@ -73,6 +87,10 @@ public class CustomerService {
             throw new DuplicateResourceException("Customer with national ID already exists");
         }
 
+        ResolvedCustomerType resolvedType =
+                resolveCustomerType(
+                        request.customerTypeCode(), Customer.DEFAULT_CUSTOMER_TYPE_CODE);
+
         String customerCode = customerCodeGenerator.nextCustomerCode();
         Customer customer =
                 new Customer(
@@ -83,10 +101,16 @@ public class CustomerService {
                         request.phone(),
                         request.address(),
                         request.location(),
-                        request.dateOfBirth());
+                        request.dateOfBirth(),
+                        resolvedType.id(),
+                        resolvedType.code());
 
         Customer saved = customerRepository.save(customer);
-        log.info("Created customer [id={}, code={}]", saved.getId(), saved.getCustomerCode());
+        log.info(
+                "Created customer [id={}, code={}, type={}]",
+                saved.getId(),
+                saved.getCustomerCode(),
+                saved.getCustomerTypeCode());
         return CustomerResponse.from(saved);
     }
 
@@ -107,21 +131,32 @@ public class CustomerService {
 
     /**
      * Searches active customers by optional name and location filters with pagination and sorting.
+     */
+    public PageResponse<CustomerResponse> searchCustomers(
+            String name, String location, Pageable pageable) {
+        return searchCustomers(name, location, null, pageable);
+    }
+
+    /**
+     * Searches active customers by optional name, location, and customerTypeCode filters with
+     * pagination and sorting.
      *
      * @param name optional full name query (case-insensitive substring)
      * @param location optional province/city query
+     * @param customerTypeCode optional customer classification filter (INDIVIDUAL or BUSINESS)
      * @param pageable page index, page size, and sorting
      * @return paginated response of matching customer records
      */
     public PageResponse<CustomerResponse> searchCustomers(
-            String name, String location, Pageable pageable) {
+            String name, String location, String customerTypeCode, Pageable pageable) {
         Pageable effectivePageable = resolvePageable(pageable);
         validatePaginationAndSort(effectivePageable);
 
         Specification<Customer> spec =
                 CustomerSpecifications.activeOnly()
                         .and(CustomerSpecifications.withName(name))
-                        .and(CustomerSpecifications.withLocation(location));
+                        .and(CustomerSpecifications.withLocation(location))
+                        .and(CustomerSpecifications.withCustomerTypeCode(customerTypeCode));
 
         Page<Customer> page = customerRepository.findAll(spec, effectivePageable);
         return PageResponse.from(page, CustomerResponse::from);
@@ -165,11 +200,18 @@ public class CustomerService {
                 request.location(),
                 request.dateOfBirth());
 
+        if (request.customerTypeCode() != null && !request.customerTypeCode().isBlank()) {
+            ResolvedCustomerType resolvedType =
+                    resolveCustomerType(request.customerTypeCode(), customer.getCustomerTypeCode());
+            customer.assignCustomerType(resolvedType.id(), resolvedType.code());
+        }
+
         Customer updated = customerRepository.saveAndFlush(customer);
         log.info(
-                "Updated customer [id={}, code={}, version={}]",
+                "Updated customer [id={}, code={}, type={}, version={}]",
                 updated.getId(),
                 updated.getCustomerCode(),
+                updated.getCustomerTypeCode(),
                 updated.getVersion());
         return CustomerResponse.from(updated);
     }
@@ -195,6 +237,34 @@ public class CustomerService {
                 customer.getId(),
                 customer.getCustomerCode());
     }
+
+    private ResolvedCustomerType resolveCustomerType(String rawCode, String defaultCode) {
+        String normalized =
+                (rawCode == null || rawCode.isBlank())
+                        ? defaultCode
+                        : rawCode.trim().toUpperCase(Locale.ROOT);
+        if (customerTypeRepository != null) {
+            CustomerType type =
+                    customerTypeRepository
+                            .findByCodeIgnoreCase(normalized)
+                            .orElseThrow(
+                                    () ->
+                                            new BusinessRuleException(
+                                                    ErrorCode.VALIDATION_FAILED,
+                                                    "Unsupported customer type code: " + rawCode));
+            return new ResolvedCustomerType(type.getId(), type.getCode());
+        }
+        if (CustomerType.CODE_INDIVIDUAL.equals(normalized)) {
+            return new ResolvedCustomerType(1L, CustomerType.CODE_INDIVIDUAL);
+        }
+        if (CustomerType.CODE_BUSINESS.equals(normalized)) {
+            return new ResolvedCustomerType(2L, CustomerType.CODE_BUSINESS);
+        }
+        throw new BusinessRuleException(
+                ErrorCode.VALIDATION_FAILED, "Unsupported customer type code: " + rawCode);
+    }
+
+    private record ResolvedCustomerType(Long id, String code) {}
 
     private Pageable resolvePageable(Pageable pageable) {
         Sort sort = pageable.getSort();

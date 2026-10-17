@@ -401,4 +401,51 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V12 customer_type migration creating table, seeding INDIVIDUAL and"
+                    + " BUSINESS, and linking core.customer")
+    void flywayMigration_shouldApplyV12CustomerTypeSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT version, description, type, script, success "
+                                    + "FROM core.flyway_schema_history "
+                                    + "WHERE version = '12'")) {
+                assertThat(rs.next())
+                        .as("Migration version 12 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script")).isEqualTo("V12__customer_type.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    connection.getMetaData().getTables(null, "core", "customer_type", null)) {
+                assertThat(rs.next())
+                        .as("Table 'customer_type' should exist in schema 'core'")
+                        .isTrue();
+            }
+
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT code, max_transaction_limit, max_daily_limit FROM"
+                                    + " core.customer_type ORDER BY id ASC")) {
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("code")).isEqualTo("INDIVIDUAL");
+                assertThat(rs.getBigDecimal("max_transaction_limit"))
+                        .isEqualByComparingTo("100000000.00");
+                assertThat(rs.getBigDecimal("max_daily_limit"))
+                        .isEqualByComparingTo("500000000.00");
+
+                assertThat(rs.next()).isTrue();
+                assertThat(rs.getString("code")).isEqualTo("BUSINESS");
+                assertThat(rs.getBigDecimal("max_transaction_limit"))
+                        .isEqualByComparingTo("2000000000.00");
+                assertThat(rs.getBigDecimal("max_daily_limit"))
+                        .isEqualByComparingTo("10000000000.00");
+            }
+        }
+    }
 }

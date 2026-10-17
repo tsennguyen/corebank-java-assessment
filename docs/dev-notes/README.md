@@ -33,3 +33,5 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **3.6** | Recurring Transaction Scheduler | L2-07, FR-17, NFR-1, ADR-011 | [#31](https://github.com/tsennguyen/corebank-java-assessment/pull/31) | [3-6-recurring-transaction-scheduler.md](3-6-recurring-transaction-scheduler.md) |
 | **3.7** | Query Cache with Fallback (`Redis` + `Caffeine` + `AFTER_COMMIT` Eviction) | L2-08, G-05, NFR-3, ADR-009 | [#32](https://github.com/tsennguyen/corebank-java-assessment/pull/32) | [3-7-query-cache-with-fallback.md](3-7-query-cache-with-fallback.md) |
 | **3.8** | Refresh Token Rotation, Reuse Detection (`401 TOKEN_REUSED`) & Login Rate Limiting (`429`) | NC-07, FR-15, NFR-5 | [#33](https://github.com/tsennguyen/corebank-java-assessment/pull/33) | [3-8-refresh-token-rotation-and-rate-limit.md](3-8-refresh-token-rotation-and-rate-limit.md) |
+| **4.1** | Customer Classification (`INDIVIDUAL` / `BUSINESS`) & Effective Limit Capping (`min(accountLimit, customerTypeMaxLimit)`) | L3-05, L3-06, FR-18, FR-5 | [#34](https://github.com/tsennguyen/corebank-java-assessment/pull/34) | [4-1-customer-type-limits.md](4-1-customer-type-limits.md) |
+

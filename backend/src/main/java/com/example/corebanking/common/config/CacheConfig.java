@@ -2,6 +2,7 @@ package com.example.corebanking.common.config;
 
 import com.example.corebanking.account.api.dto.AccountResponse;
 import com.example.corebanking.common.api.PageResponse;
+import com.example.corebanking.customer.api.dto.CustomerTypeResponse;
 import com.example.corebanking.transaction.api.dto.TransactionResponse;
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -72,6 +73,13 @@ public class CacheConfig implements CachingConfigurer {
         Jackson2JsonRedisSerializer<PageResponse<TransactionResponse>> txPageSerializer =
                 new Jackson2JsonRedisSerializer<>(objectMapper, txPageType);
 
+        JavaType customerTypeListType =
+                objectMapper
+                        .getTypeFactory()
+                        .constructCollectionType(List.class, CustomerTypeResponse.class);
+        Jackson2JsonRedisSerializer<List<CustomerTypeResponse>> customerTypeListSerializer =
+                new Jackson2JsonRedisSerializer<>(objectMapper, customerTypeListType);
+
         GenericJackson2JsonRedisSerializer genericSerializer =
                 new GenericJackson2JsonRedisSerializer(objectMapper);
 
@@ -103,7 +111,12 @@ public class CacheConfig implements CachingConfigurer {
                                 RedisSerializationContext.SerializationPair.fromSerializer(
                                         txPageSerializer)));
         cacheConfigurations.put(
-                CUSTOMER_TYPES_CACHE, defaultConfig.entryTtl(properties.getCustomerTypesTtl()));
+                CUSTOMER_TYPES_CACHE,
+                defaultConfig
+                        .entryTtl(properties.getCustomerTypesTtl())
+                        .serializeValuesWith(
+                                RedisSerializationContext.SerializationPair.fromSerializer(
+                                        customerTypeListSerializer)));
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(defaultConfig)

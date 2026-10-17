@@ -27,6 +27,13 @@ INSERT INTO core.customer (
     ('CUS8000020', 'Hồ Tuấn Kiệt', '000101000020', 'hotuankiet.demo@example.com', '0900000020', 'Số 42 Đường Mẫu T, Quận Cái Răng', 'Cần Thơ', '1990-12-30', CURRENT_TIMESTAMP - INTERVAL '30 days')
 ON CONFLICT DO NOTHING;
 
+-- Classify corporate demo customers as BUSINESS (L3-05, Story 4.1)
+UPDATE core.customer
+SET customer_type_id = (SELECT id FROM core.customer_type WHERE code = 'BUSINESS'),
+    customer_type_code = 'BUSINESS'
+WHERE customer_code IN ('CUS8000007', 'CUS8000013');
+
+
 -- 2. Seed synthetic accounts across LOW (< 10M), MEDIUM (10M - < 100M), and HIGH (>= 100M) tiers
 INSERT INTO core.account (
     account_number, customer_id, currency, balance, transaction_limit, daily_limit, opened_date, status, created_at
