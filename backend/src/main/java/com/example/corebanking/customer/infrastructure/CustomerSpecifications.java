@@ -1,6 +1,7 @@
 package com.example.corebanking.customer.infrastructure;
 
 import com.example.corebanking.customer.domain.Customer;
+import java.util.Locale;
 import org.springframework.data.jpa.domain.Specification;
 
 /** Reusable JPA specifications for querying and filtering Customer entities. */
@@ -39,6 +40,17 @@ public final class CustomerSpecifications {
             }
             String escaped = escapeLikePattern(location.toLowerCase().trim());
             return cb.like(cb.lower(root.get("location")), "%" + escaped + "%", LIKE_ESCAPE_CHAR);
+        };
+    }
+
+    /** Case-insensitive exact match on customer classification code (e.g. INDIVIDUAL, BUSINESS). */
+    public static Specification<Customer> withCustomerTypeCode(String customerTypeCode) {
+        return (root, query, cb) -> {
+            if (customerTypeCode == null || customerTypeCode.isBlank()) {
+                return cb.conjunction();
+            }
+            String normalized = customerTypeCode.trim().toUpperCase(Locale.ROOT);
+            return cb.equal(cb.upper(root.get("customerTypeCode")), normalized);
         };
     }
 

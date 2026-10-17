@@ -42,4 +42,24 @@ public record CreateCustomerRequest(
                 String location,
         @Schema(description = "Date of birth", example = "1990-01-15")
                 @Past(message = "Date of birth must be in the past")
-                LocalDate dateOfBirth) {}
+                LocalDate dateOfBirth,
+        @Schema(
+                        description =
+                                "Customer type code (INDIVIDUAL or BUSINESS; defaults to"
+                                        + " INDIVIDUAL)",
+                        example = "INDIVIDUAL")
+                @Size(max = 32, message = "Customer type code must not exceed 32 characters")
+                String customerTypeCode) {
+
+    /** Backward-compatible constructor defaulting customerTypeCode to INDIVIDUAL. */
+    public CreateCustomerRequest(
+            String fullName,
+            String nationalId,
+            String email,
+            String phone,
+            String address,
+            String location,
+            LocalDate dateOfBirth) {
+        this(fullName, nationalId, email, phone, address, location, dateOfBirth, null);
+    }
+}

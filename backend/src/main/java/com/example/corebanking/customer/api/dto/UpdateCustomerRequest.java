@@ -41,4 +41,24 @@ public record UpdateCustomerRequest(
                         description = "Current version for optimistic locking concurrency control",
                         example = "0")
                 @NotNull(message = "Version is required for optimistic locking concurrency control")
-                Long version) {}
+                Long version,
+        @Schema(
+                        description =
+                                "Optional customer type code (INDIVIDUAL or BUSINESS; retains"
+                                        + " existing type if omitted)",
+                        example = "BUSINESS")
+                @Size(max = 32, message = "Customer type code must not exceed 32 characters")
+                String customerTypeCode) {
+
+    /** Backward-compatible constructor retaining the existing customerTypeCode when omitted. */
+    public UpdateCustomerRequest(
+            String fullName,
+            String email,
+            String phone,
+            String address,
+            String location,
+            LocalDate dateOfBirth,
+            Long version) {
+        this(fullName, email, phone, address, location, dateOfBirth, version, null);
+    }
+}

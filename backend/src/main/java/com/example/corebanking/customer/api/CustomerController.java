@@ -123,10 +123,19 @@ public class CustomerController {
             @Parameter(description = "Lọc theo địa điểm tỉnh/thành", example = "Ha Noi")
                     @RequestParam(required = false)
                     String location,
+            @Parameter(
+                            description = "Lọc theo mã loại khách hàng (INDIVIDUAL hoặc BUSINESS)",
+                            example = "INDIVIDUAL")
+                    @RequestParam(required = false)
+                    String customerTypeCode,
             @ParameterObject
                     @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC)
                     Pageable pageable) {
-        return ResponseEntity.ok(customerService.searchCustomers(name, location, pageable));
+        if (customerTypeCode == null || customerTypeCode.isBlank()) {
+            return ResponseEntity.ok(customerService.searchCustomers(name, location, pageable));
+        }
+        return ResponseEntity.ok(
+                customerService.searchCustomers(name, location, customerTypeCode, pageable));
     }
 
     @PutMapping("/{id}")
