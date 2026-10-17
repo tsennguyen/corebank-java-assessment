@@ -47,7 +47,11 @@ app:
     jwt:
       secret: ${JWT_SECRET:corebank-demo-jwt-secret-key-at-least-256-bits-long-2026}
       access-token-ttl-seconds: ${JWT_ACCESS_TOKEN_TTL_SECONDS:900}
+      refresh-token-ttl-seconds: ${JWT_REFRESH_TOKEN_TTL_SECONDS:604800}
       issuer: ${JWT_ISSUER:corebank-java-assessment}
+    rate-limit:
+      max-attempts: ${AUTH_RATE_LIMIT_MAX_ATTEMPTS:5}
+      window-seconds: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:300}
     admin-bootstrap:
       enabled: ${ADMIN_BOOTSTRAP_ENABLED:true}
       username: ${ADMIN_BOOTSTRAP_USERNAME:admin}

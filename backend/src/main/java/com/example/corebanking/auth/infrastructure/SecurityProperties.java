@@ -15,12 +15,14 @@ public class SecurityProperties {
 
     private JwtProperties jwt = new JwtProperties();
     private AdminBootstrapProperties adminBootstrap = new AdminBootstrapProperties();
+    private RateLimitProperties rateLimit = new RateLimitProperties();
 
     @Getter
     @Setter
     public static class JwtProperties {
         private String secret = "corebank-demo-jwt-secret-key-at-least-256-bits-long-2026";
         private long accessTokenTtlSeconds = 900L;
+        private long refreshTokenTtlSeconds = 604800L;
         private String issuer = "corebank-java-assessment";
     }
 
@@ -30,5 +32,12 @@ public class SecurityProperties {
         private boolean enabled = true;
         private String username = "admin";
         private String password = "Admin@123";
+    }
+
+    @Getter
+    @Setter
+    public static class RateLimitProperties {
+        private int maxAttempts = 5;
+        private long windowSeconds = 300L;
     }
 }
