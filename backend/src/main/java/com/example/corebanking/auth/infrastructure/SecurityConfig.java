@@ -126,7 +126,7 @@ public class SecurityConfig {
                                                 "/v3/api-docs/**")
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout")
-                                        .authenticated()
+                                        .permitAll()
                                         .requestMatchers("/api/v1/me", "/api/v1/me/**")
                                         .hasRole("CUSTOMER")
                                         .requestMatchers(

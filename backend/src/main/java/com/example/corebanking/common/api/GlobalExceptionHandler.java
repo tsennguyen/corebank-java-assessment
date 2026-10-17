@@ -406,4 +406,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         }
         return URI.create("about:blank");
     }
+
+    /** Handles login rate limit violations (429 TOO_MANY_REQUESTS) with RFC Retry-After header. */
+    @ExceptionHandler(com.example.corebanking.auth.domain.RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitExceededException(
+            com.example.corebanking.auth.domain.RateLimitExceededException ex, WebRequest request) {
+        ResponseEntity<ProblemDetail> response = handleDomainException(ex, request);
+        return ResponseEntity.status(response.getStatusCode())
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(response.getBody());
+    }
 }
