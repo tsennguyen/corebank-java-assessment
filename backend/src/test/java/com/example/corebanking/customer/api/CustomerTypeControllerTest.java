@@ -83,6 +83,28 @@ class CustomerTypeControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/v1/customer-types/{code} returns 200 with single CustomerType details")
+    void getCustomerTypeByCode_shouldReturn200() throws Exception {
+        CustomerTypeResponse response =
+                new CustomerTypeResponse(
+                        2L,
+                        "BUSINESS",
+                        "Doanh nghiệp",
+                        new BigDecimal("2000000000.00"),
+                        new BigDecimal("10000000000.00"),
+                        Instant.parse("2026-10-09T01:00:00Z"),
+                        0L);
+
+        when(customerTypeService.getCustomerTypeByCode("business")).thenReturn(response);
+
+        mockMvc.perform(get("/api/v1/customer-types/business"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("BUSINESS"))
+                .andExpect(jsonPath("$.maxTransactionLimit").value(2000000000.00))
+                .andExpect(jsonPath("$.maxDailyLimit").value(10000000000.00));
+    }
+
+    @Test
     @DisplayName("PUT /api/v1/customer-types/{code} updates limits and returns 200")
     void updateCustomerType_shouldReturn200() throws Exception {
         UpdateCustomerTypeRequest request =
@@ -111,6 +133,55 @@ class CustomerTypeControllerTest {
                 .andExpect(jsonPath("$.maxTransactionLimit").value(150000000.00))
                 .andExpect(jsonPath("$.maxDailyLimit").value(600000000.00))
                 .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    @DisplayName(
+            "PUT /api/v1/customer-types/{code} returns 200 when maxDailyLimit exactly equals"
+                    + " maxTransactionLimit")
+    void updateCustomerType_whenDailyEqualsTxLimit_shouldReturn200() throws Exception {
+        UpdateCustomerTypeRequest request =
+                new UpdateCustomerTypeRequest(
+                        new BigDecimal("200000000.00"), new BigDecimal("200000000.00"));
+        CustomerTypeResponse updated =
+                new CustomerTypeResponse(
+                        1L,
+                        "INDIVIDUAL",
+                        "Cá nhân",
+                        new BigDecimal("200000000.00"),
+                        new BigDecimal("200000000.00"),
+                        Instant.parse("2026-10-09T02:00:00Z"),
+                        1L);
+
+        when(customerTypeService.updateCustomerType(
+                        eq("INDIVIDUAL"), any(UpdateCustomerTypeRequest.class)))
+                .thenReturn(updated);
+
+        mockMvc.perform(
+                        put("/api/v1/customer-types/INDIVIDUAL")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maxTransactionLimit").value(200000000.00))
+                .andExpect(jsonPath("$.maxDailyLimit").value(200000000.00));
+    }
+
+    @Test
+    @DisplayName(
+            "PUT /api/v1/customer-types/{code} returns 400 when maxTransactionLimit is zero or"
+                    + " negative")
+    void updateCustomerType_whenZeroOrNegativeLimit_shouldReturn400() throws Exception {
+        UpdateCustomerTypeRequest request =
+                new UpdateCustomerTypeRequest(BigDecimal.ZERO, new BigDecimal("100000000.00"));
+
+        mockMvc.perform(
+                        put("/api/v1/customer-types/INDIVIDUAL")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors", hasSize(1)))
+                .andExpect(jsonPath("$.errors[0].field").value("maxTransactionLimit"));
     }
 
     @Test
@@ -155,6 +226,34 @@ class CustomerTypeControllerTest {
                                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName(
+            "PUT /api/v1/customer-types/{code} returns 409 CONCURRENT_MODIFICATION when version"
+                    + " mismatches")
+    void updateCustomerType_whenVersionMismatch_shouldReturn409() throws Exception {
+        UpdateCustomerTypeRequest request =
+                new UpdateCustomerTypeRequest(
+                        "Cá nhân",
+                        new BigDecimal("150000000.00"),
+                        new BigDecimal("600000000.00"),
+                        0L);
+
+        when(customerTypeService.updateCustomerType(
+                        eq("INDIVIDUAL"), any(UpdateCustomerTypeRequest.class)))
+                .thenThrow(
+                        new BusinessRuleException(
+                                ErrorCode.CONCURRENT_MODIFICATION,
+                                "CustomerType has been modified by another concurrent"
+                                        + " transaction"));
+
+        mockMvc.perform(
+                        put("/api/v1/customer-types/INDIVIDUAL")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
     }
 
     @Test

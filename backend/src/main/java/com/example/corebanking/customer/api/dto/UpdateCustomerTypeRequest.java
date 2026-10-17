@@ -41,10 +41,21 @@ public record UpdateCustomerTypeRequest(
                         message =
                                 "Max daily limit must have at most 17 integer digits and 2 decimal"
                                         + " places")
-                BigDecimal maxDailyLimit) {
+                BigDecimal maxDailyLimit,
+        @Schema(
+                        description =
+                                "Phiên bản bản ghi hiện tại để kiểm soát khóa lạc quan (tùy chọn)",
+                        example = "0")
+                Long version) {
 
     /** Convenience constructor when updating limits without changing the display name. */
     public UpdateCustomerTypeRequest(BigDecimal maxTransactionLimit, BigDecimal maxDailyLimit) {
-        this(null, maxTransactionLimit, maxDailyLimit);
+        this(null, maxTransactionLimit, maxDailyLimit, null);
+    }
+
+    /** Convenience constructor when updating name and limits without explicit version. */
+    public UpdateCustomerTypeRequest(
+            String name, BigDecimal maxTransactionLimit, BigDecimal maxDailyLimit) {
+        this(name, maxTransactionLimit, maxDailyLimit, null);
     }
 }

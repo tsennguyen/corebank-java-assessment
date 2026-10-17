@@ -23,10 +23,14 @@ import com.example.corebanking.transaction.api.dto.DepositRequest;
 import com.example.corebanking.transaction.api.dto.TransferRequest;
 import com.example.corebanking.transaction.application.TransactionService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManagerFactory;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.hibernate.SessionFactory;
+import org.hibernate.stat.Statistics;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +54,16 @@ class CustomerTypeLimitsIntegrationTest extends IntegrationTestBase {
     @Autowired private AccountService accountService;
     @Autowired private TransactionService transactionService;
     @Autowired private CacheManager cacheManager;
+    @Autowired private EntityManagerFactory entityManagerFactory;
+
+    private Statistics hibernateStats;
+
+    @BeforeEach
+    void initHibernateStatistics() {
+        hibernateStats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
+        hibernateStats.setStatisticsEnabled(true);
+        hibernateStats.clear();
+    }
 
     private String nextSyntheticNationalId() {
         return String.format("000999%06d", NATIONAL_ID_SEQ.incrementAndGet());
@@ -58,7 +72,7 @@ class CustomerTypeLimitsIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName(
             "AC1 & AC2: Customer creation defaults to INDIVIDUAL, accepts BUSINESS, updates"
-                    + " customerTypeCode, and filters by customerTypeCode")
+                    + " customerTypeCode, and filters by customerTypeCode with bounded SQL count")
     void customerLifecycle_shouldDefaultToIndividualAndSupportBusinessClassification()
             throws Exception {
         // 1. Omit customerTypeCode -> defaults to INDIVIDUAL
@@ -90,7 +104,9 @@ class CustomerTypeLimitsIntegrationTest extends IntegrationTestBase {
         CustomerResponse createdBusiness = customerService.createCustomer(businessReq);
         assertThat(createdBusiness.customerTypeCode()).isEqualTo("BUSINESS");
 
-        // 3. Filter GET /api/v1/customers by customerTypeCode=BUSINESS
+        // 3. Filter GET /api/v1/customers by customerTypeCode=BUSINESS (assert <= 2 SQL queries per
+        // Rule 16)
+        hibernateStats.clear();
         mockMvc.perform(
                         get("/api/v1/customers")
                                 .param("name", "Công Ty TNHH Mẫu 41")
@@ -98,6 +114,11 @@ class CustomerTypeLimitsIntegrationTest extends IntegrationTestBase {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(1)))
                 .andExpect(jsonPath("$.content[0].customerTypeCode").value("BUSINESS"));
+        assertThat(hibernateStats.getPrepareStatementCount())
+                .as(
+                        "Filtered customer search by customerTypeCode must execute at most 2 SQL"
+                                + " statements (1 SELECT + optional 1 COUNT)")
+                .isLessThanOrEqualTo(2L);
 
         // 4. Update INDIVIDUAL customer to BUSINESS
         UpdateCustomerRequest promoteReq =
@@ -138,10 +159,11 @@ class CustomerTypeLimitsIntegrationTest extends IntegrationTestBase {
     @Test
     @DisplayName(
             "AC3 & AC4: Effective limit min(account, customerType) enforces 100M cap on INDIVIDUAL,"
-                    + " allows 150M on BUSINESS, and evicts customerTypes cache on PUT")
+                    + " allows 150M on BUSINESS, caches customerTypes (1 SQL cold / 0 SQL warm),"
+                    + " and evicts on PUT")
     void effectiveLimitsAndCacheEviction_shouldEnforceCustomerTypeCapsAndEvictCacheOnUpdate()
             throws Exception {
-        // 1. Create an INDIVIDUAL customer and a BUSINESS customer, plus a target recipient
+        // 1. Create an INDIVIDUAL customer and a BUSINESS customer
         CustomerResponse individualCustomer =
                 customerService.createCustomer(
                         new CreateCustomerRequest(
@@ -233,13 +255,27 @@ class CustomerTypeLimitsIntegrationTest extends IntegrationTestBase {
                 .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.amount").value(150000000.00));
 
-        // 4. Verify customerTypes cache is populated after GET /api/v1/customer-types
+        // 4. Verify customerTypes cache cold (1 SQL) vs warm (0 SQL) per Rule 16
+        Cache customerTypesCache = cacheManager.getCache(CacheConfig.CUSTOMER_TYPES_CACHE);
+        assertThat(customerTypesCache).isNotNull();
+        customerTypesCache.clear();
+
+        hibernateStats.clear();
         mockMvc.perform(get("/api/v1/customer-types"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(2)));
-        Cache customerTypesCache = cacheManager.getCache(CacheConfig.CUSTOMER_TYPES_CACHE);
-        assertThat(customerTypesCache).isNotNull();
+        assertThat(hibernateStats.getPrepareStatementCount())
+                .as("Cold GET /api/v1/customer-types should execute exactly 1 SQL query")
+                .isEqualTo(1L);
         assertThat(customerTypesCache.get("all")).isNotNull();
+
+        hibernateStats.clear();
+        mockMvc.perform(get("/api/v1/customer-types"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(2)));
+        assertThat(hibernateStats.getPrepareStatementCount())
+                .as("Warm GET /api/v1/customer-types must hit cache with 0 SQL queries")
+                .isZero();
 
         // 5. Admin updates INDIVIDUAL maxTransactionLimit to 200M -> cache evicted and 150M
         // transfer now succeeds! Repeat restoration in finally block to keep canonical limits for

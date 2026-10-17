@@ -102,6 +102,10 @@ public class CustomerTypeController {
         @ApiResponse(
                 responseCode = "404",
                 description = "Không tìm thấy loại khách hàng",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "409",
+                description = "Xung đột phiên bản dữ liệu (Concurrent Modification)",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<CustomerTypeResponse> updateCustomerType(

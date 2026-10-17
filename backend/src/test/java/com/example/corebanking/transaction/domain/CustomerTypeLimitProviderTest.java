@@ -12,6 +12,7 @@ import com.example.corebanking.common.domain.Money;
 import com.example.corebanking.customer.api.dto.CustomerTypeResponse;
 import com.example.corebanking.customer.application.CustomerTypeService;
 import com.example.corebanking.customer.domain.Customer;
+import com.example.corebanking.customer.domain.CustomerType;
 import com.example.corebanking.customer.infrastructure.CustomerRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -26,7 +27,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("CustomerTypeLimitProvider Unit Tests")
+@DisplayName("CustomerTypeLimitProvider & CustomerType Domain Unit Tests")
 class CustomerTypeLimitProviderTest {
 
     @Mock private CustomerRepository customerRepository;
@@ -105,6 +106,21 @@ class CustomerTypeLimitProviderTest {
                             assertThat(bre.getErrorCode()).isEqualTo(ErrorCode.LIMIT_EXCEEDED);
                             assertThat(bre.getMessage()).contains("100000000.00");
                         });
+
+        // Also verify daily limit is capped at customerType.maxDailyLimit (500M) even when account
+        // dailyLimit is 800M
+        assertThatThrownBy(
+                        () ->
+                                limitPolicy.validateLimits(
+                                        account, Money.of("80000000.00"), Money.of("450000000.00")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex -> {
+                            BusinessRuleException bre = (BusinessRuleException) ex;
+                            assertThat(bre.getErrorCode())
+                                    .isEqualTo(ErrorCode.DAILY_LIMIT_EXCEEDED);
+                            assertThat(bre.getMessage()).contains("500000000.00");
+                        });
     }
 
     @Test
@@ -163,5 +179,36 @@ class CustomerTypeLimitProviderTest {
         AccountLimits effective = limitProvider.getLimits(account);
         assertThat(effective.transactionLimit()).isEqualByComparingTo("50000000.00");
         assertThat(effective.dailyLimit()).isEqualByComparingTo("200000000.00");
+    }
+
+    @Test
+    @DisplayName(
+            "CustomerType domain enforces maxDailyLimit >= maxTransactionLimit > 0 and allows"
+                    + " equality boundary")
+    void customerTypeDomain_shouldEnforceLimitInvariants() {
+        CustomerType type =
+                new CustomerType(
+                        1L,
+                        "individual",
+                        "Cá nhân",
+                        new BigDecimal("100000000.00"),
+                        new BigDecimal("100000000.00"));
+        assertThat(type.getCode()).isEqualTo("INDIVIDUAL");
+        assertThat(type.getMaxTransactionLimit()).isEqualByComparingTo("100000000.00");
+        assertThat(type.getMaxDailyLimit()).isEqualByComparingTo("100000000.00");
+
+        assertThatThrownBy(
+                        () ->
+                                type.updateLimits(
+                                        new BigDecimal("200000000.00"),
+                                        new BigDecimal("199999999.99")))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+        assertThatThrownBy(() -> type.updateLimits(BigDecimal.ZERO, new BigDecimal("100.00")))
+                .isInstanceOf(BusinessRuleException.class);
     }
 }

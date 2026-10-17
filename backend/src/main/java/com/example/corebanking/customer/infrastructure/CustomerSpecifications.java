@@ -50,7 +50,7 @@ public final class CustomerSpecifications {
                 return cb.conjunction();
             }
             String normalized = customerTypeCode.trim().toUpperCase(Locale.ROOT);
-            return cb.equal(cb.upper(root.get("customerTypeCode")), normalized);
+            return cb.equal(root.get("customerTypeCode"), normalized);
         };
     }
 

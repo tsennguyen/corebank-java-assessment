@@ -1,6 +1,8 @@
 package com.example.corebanking.customer.application;
 
 import com.example.corebanking.common.config.CacheConfig;
+import com.example.corebanking.common.domain.BusinessRuleException;
+import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
 import com.example.corebanking.customer.api.dto.CustomerTypeResponse;
 import com.example.corebanking.customer.api.dto.UpdateCustomerTypeRequest;
@@ -50,20 +52,36 @@ public class CustomerTypeService {
 
     /**
      * Updates the maximum transaction and daily limits (and optional display name) of a customer
-     * type and evicts the {@code customerTypes} cache.
+     * type with optional optimistic concurrency check, and evicts the {@code customerTypes} cache.
      */
     @Transactional
     @CacheEvict(value = CacheConfig.CUSTOMER_TYPES_CACHE, allEntries = true)
     public CustomerTypeResponse updateCustomerType(String code, UpdateCustomerTypeRequest request) {
         CustomerType customerType = findEntityByCodeOrThrow(code);
+        if (request.version() != null && !customerType.getVersion().equals(request.version())) {
+            log.warn(
+                    "Optimistic concurrency conflict on CustomerType [code={}]: expected"
+                            + " version={}, actual={}",
+                    customerType.getCode(),
+                    request.version(),
+                    customerType.getVersion());
+            throw new BusinessRuleException(
+                    ErrorCode.CONCURRENT_MODIFICATION,
+                    "CustomerType has been modified by another concurrent transaction. Expected"
+                            + " version "
+                            + request.version()
+                            + " but found "
+                            + customerType.getVersion());
+        }
         customerType.updateNameAndLimits(
                 request.name(), request.maxTransactionLimit(), request.maxDailyLimit());
         CustomerType saved = customerTypeRepository.saveAndFlush(customerType);
         log.info(
-                "Updated CustomerType [code={}, maxTxLimit={}, maxDailyLimit={}]",
+                "Updated CustomerType [code={}, maxTxLimit={}, maxDailyLimit={}, version={}]",
                 saved.getCode(),
                 saved.getMaxTransactionLimit(),
-                saved.getMaxDailyLimit());
+                saved.getMaxDailyLimit(),
+                saved.getVersion());
         return CustomerTypeResponse.from(saved);
     }
 
