@@ -64,6 +64,11 @@ app:
     batch-size: 50
     max-failures: 3
     scheduler-enabled: true
+  fraud:
+    amount-threshold: 50000000.00
+    velocity:
+      max-count: 5
+      window-seconds: 60
   statistics:
     balance-tiers:
       medium-threshold: 10000000.00
