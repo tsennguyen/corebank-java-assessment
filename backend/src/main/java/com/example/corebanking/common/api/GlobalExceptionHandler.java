@@ -416,4 +416,34 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
                 .body(response.getBody());
     }
+
+    /** Handles missing required query parameters (@RequestParam). */
+    @Override
+    protected ResponseEntity<Object> handleMissingServletRequestParameter(
+            org.springframework.web.bind.MissingServletRequestParameterException ex,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        List<ValidationError> validationErrors =
+                List.of(
+                        new ValidationError(
+                                ex.getParameterName(),
+                                "Required parameter '" + ex.getParameterName() + "' is missing"));
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.BAD_REQUEST,
+                        "Required parameter '" + ex.getParameterName() + "' is not present");
+        problemDetail.setTitle(ErrorCode.VALIDATION_FAILED.getDefaultTitle());
+        problemDetail.setType(URI.create(ErrorCode.VALIDATION_FAILED.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, ErrorCode.VALIDATION_FAILED.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+        problemDetail.setProperty(PROPERTY_ERRORS, validationErrors);
+
+        log.warn("Missing request parameter [requestId={}]: {}", requestId, ex.getParameterName());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(headers).body(problemDetail);
+    }
 }
