@@ -22,10 +22,27 @@ spring:
     schemas: core
     default-schema: core
     locations: classpath:db/migration
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 2s
+      repositories:
+        enabled: false
 
 app:
   business-zone: Asia/Ho_Chi_Minh
   version: "@project.version@"
+  redis:
+    enabled: ${APP_REDIS_ENABLED:false}
+  cache:
+    maximum-size: 10000
+    accounts-by-customer-ttl: 10m
+    recent-transactions-ttl: 5m
+    customer-types-ttl: 60m
+    caffeine-accounts-by-customer-ttl: 2m
+    caffeine-recent-transactions-ttl: 1m
+    caffeine-customer-types-ttl: 60m
   security:
     jwt:
       secret: ${JWT_SECRET:corebank-demo-jwt-secret-key-at-least-256-bits-long-2026}
@@ -85,6 +102,9 @@ server:
   shutdown: graceful
 
 management:
+  health:
+    redis:
+      enabled: ${app.redis.enabled:false}
   endpoints:
     web:
       exposure:

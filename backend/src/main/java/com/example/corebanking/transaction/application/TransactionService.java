@@ -3,6 +3,7 @@ package com.example.corebanking.transaction.application;
 import com.example.corebanking.account.domain.Account;
 import com.example.corebanking.account.infrastructure.AccountRepository;
 import com.example.corebanking.common.api.PageResponse;
+import com.example.corebanking.common.config.CacheConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.Money;
@@ -22,6 +23,7 @@ import com.example.corebanking.transaction.domain.Transaction;
 import com.example.corebanking.transaction.domain.TransactionStatus;
 import com.example.corebanking.transaction.domain.TransactionType;
 import com.example.corebanking.transaction.domain.event.TransactionCompletedEvent;
+import com.example.corebanking.transaction.domain.event.TransactionMetadataUpdatedEvent;
 import com.example.corebanking.transaction.infrastructure.TransactionReferenceGenerator;
 import com.example.corebanking.transaction.infrastructure.TransactionRepository;
 import com.example.corebanking.transaction.infrastructure.TransactionSpecifications;
@@ -34,6 +36,7 @@ import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -505,6 +508,13 @@ public class TransactionService {
         transaction.updateMetadata(request.description(), request.location());
         Transaction saved = transactionRepository.saveAndFlush(transaction);
 
+        eventPublisher.publishEvent(
+                new TransactionMetadataUpdatedEvent(
+                        saved.getId(),
+                        saved.getSourceAccountId(),
+                        saved.getTargetAccountId(),
+                        clock.instant()));
+
         log.info(
                 "Transaction metadata updated [txnId={}, ref={}]",
                 saved.getId(),
@@ -682,12 +692,20 @@ public class TransactionService {
     }
 
     /**
-     * Retrieves paginated transaction history for a specific account.
+     * Retrieves paginated transaction history for a specific account. The default first page
+     * ({@code page=0, size=20}, ordered by {@code createdAt DESC}) is cached in {@code
+     * recentTransactions} and evicted after commit whenever a transaction on the account completes
+     * (L2-08, G-05).
      *
      * @param accountId target account database ID
      * @param pageable pagination and sorting parameters
      * @return paginated transaction list
      */
+    @Cacheable(
+            cacheNames = CacheConfig.RECENT_TRANSACTIONS_CACHE,
+            key = "#accountId",
+            condition =
+                    "T(com.example.corebanking.transaction.application.TransactionService).isDefaultRecentTransactionsPage(#pageable)")
     public PageResponse<TransactionResponse> getAccountTransactions(
             Long accountId, Pageable pageable) {
         if (!accountRepository.existsById(accountId)) {
@@ -700,6 +718,38 @@ public class TransactionService {
         Page<Transaction> page =
                 transactionRepository.findByAccountId(accountId, effectivePageable);
         return PageResponse.from(page, TransactionResponse::from);
+    }
+
+    /**
+     * Determines whether a pagination request matches the default first page ({@code page=0,
+     * size=20}, unsorted or sorted by {@code createdAt DESC [, id DESC]}), qualifying for {@code
+     * recentTransactions} cache storage.
+     */
+    public static boolean isDefaultRecentTransactionsPage(Pageable pageable) {
+        if (pageable == null || pageable.isUnpaged()) {
+            return false;
+        }
+        if (pageable.getPageNumber() != 0 || pageable.getPageSize() != 20) {
+            return false;
+        }
+        Sort sort = pageable.getSort();
+        if (sort.isUnsorted()) {
+            return true;
+        }
+        List<Sort.Order> orders = sort.toList();
+        if (orders.size() == 1) {
+            Sort.Order first = orders.get(0);
+            return "createdAt".equals(first.getProperty()) && first.isDescending();
+        }
+        if (orders.size() == 2) {
+            Sort.Order first = orders.get(0);
+            Sort.Order second = orders.get(1);
+            return "createdAt".equals(first.getProperty())
+                    && first.isDescending()
+                    && "id".equals(second.getProperty())
+                    && second.isDescending();
+        }
+        return false;
     }
 
     /**
