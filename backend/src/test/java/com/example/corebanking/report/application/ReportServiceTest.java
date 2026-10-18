@@ -315,4 +315,35 @@ class ReportServiceTest {
         assertThat(TrendGranularity.MONTH.sqlUnit()).isEqualTo("month");
         assertThat(TrendGranularity.MONTH.sqlStep()).isEqualTo("1 month");
     }
+
+    @Test
+    @DisplayName(
+            "streamTransactionsInPeriod converts Vietnam date bounds to UTC Instants and rejects"
+                    + " REVERSAL filter (AC 2, AC 3, L3-07)")
+    void streamTransactionsInPeriod_shouldDelegateWithZoneBoundsAndRejectReversal() {
+        LocalDate from = LocalDate.of(2026, 1, 1);
+        LocalDate to = LocalDate.of(2026, 6, 30);
+        Instant expectedFrom = from.atStartOfDay(VN_ZONE).toInstant();
+        Instant expectedToExclusive = to.plusDays(1).atStartOfDay(VN_ZONE).toInstant();
+
+        java.util.function.Consumer<com.example.corebanking.report.api.dto.TransactionExportRow>
+                consumer = row -> {};
+
+        reportService.streamTransactionsInPeriod(from, to, TransactionType.TRANSFER, consumer);
+
+        org.mockito.Mockito.verify(reportRepository)
+                .streamTransactionsInPeriod(
+                        expectedFrom,
+                        expectedToExclusive,
+                        TransactionType.TRANSFER,
+                        null,
+                        consumer);
+
+        assertThatThrownBy(
+                        () ->
+                                reportService.streamTransactionsInPeriod(
+                                        from, to, TransactionType.REVERSAL, consumer))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("REVERSAL");
+    }
 }

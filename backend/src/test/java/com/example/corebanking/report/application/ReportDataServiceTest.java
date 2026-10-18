@@ -13,6 +13,7 @@ import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
 import com.example.corebanking.report.api.dto.TrendPointResponse;
 import com.example.corebanking.report.domain.ReportPeriod;
 import com.example.corebanking.report.domain.TrendGranularity;
+import com.example.corebanking.transaction.domain.TransactionType;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -154,5 +155,23 @@ class ReportDataServiceTest {
         assertThat(ReportDataService.defaultGranularityFor(ReportPeriod.YEAR))
                 .isEqualTo(TrendGranularity.MONTH);
         assertThat(ReportDataService.defaultGranularityFor(null)).isEqualTo(TrendGranularity.DAY);
+    }
+
+    @Test
+    @DisplayName("streamTransactionsInPeriod delegates to ReportService (L3-07)")
+    void streamTransactionsInPeriod_shouldDelegateToReportService() {
+        LocalDate from = LocalDate.of(2026, 1, 1);
+        LocalDate to = LocalDate.of(2026, 6, 30);
+        java.util.function.Consumer<com.example.corebanking.report.api.dto.TransactionExportRow>
+                consumer = row -> {};
+
+        reportDataService.streamTransactionsInPeriod(from, to, TransactionType.DEPOSIT, consumer);
+        org.mockito.Mockito.verify(reportService)
+                .streamTransactionsInPeriod(from, to, TransactionType.DEPOSIT, consumer);
+
+        reportDataService.streamTransactionsInPeriod(
+                from, to, TransactionType.DEPOSIT, 1000, consumer);
+        org.mockito.Mockito.verify(reportService)
+                .streamTransactionsInPeriod(from, to, TransactionType.DEPOSIT, 1000, consumer);
     }
 }

@@ -1,5 +1,6 @@
 package com.example.corebanking.report.infrastructure;
 
+import com.example.corebanking.report.api.dto.TransactionExportRow;
 import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
 import com.example.corebanking.report.api.dto.TrendPointResponse;
 import com.example.corebanking.report.domain.ReportPeriod;
@@ -7,6 +8,8 @@ import com.example.corebanking.report.domain.TrendGranularity;
 import com.example.corebanking.transaction.domain.TransactionType;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -15,18 +18,49 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * Read-only reporting repository executing periodic transaction aggregations and time-series trend
- * reconstructions directly in PostgreSQL via {@link JdbcClient} without loading transaction rows
- * into JVM memory (L3-01, L3-02, L3-08, G-05, FR-19, FR-20, ADR-013).
+ * Read-only reporting repository executing periodic transaction aggregations, time-series trend
+ * reconstructions, and server-cursor transaction streaming directly in PostgreSQL without loading
+ * transaction rows into JVM memory (L3-01, L3-02, L3-07, L3-08, G-05, FR-19, FR-20, FR-21, ADR-013,
+ * ADR-014).
  */
 @Repository
 @RequiredArgsConstructor
 public class ReportRepository {
+
+    /** JDBC cursor batch size preventing full ResultSet buffering in pgjdbc (G-05, NFR-2). */
+    public static final int STREAM_FETCH_SIZE = 1000;
+
+    private static final String STREAM_TRANSACTIONS_SQL =
+            """
+SELECT t.reference_no,
+       t.type,
+       t.status,
+       t.source_account_id,
+       t.target_account_id,
+       t.amount,
+       t.fee,
+       t.location,
+       t.description,
+       t.created_at
+FROM core.transaction t
+WHERE t.status = 'COMPLETED'
+  AND t.type <> 'REVERSAL'
+  AND t.created_at >= ?
+  AND t.created_at < ?
+  AND (? IS NULL OR t.type = ?)
+ORDER BY t.created_at DESC, t.id DESC
+""";
+
+    private static final String STREAM_TRANSACTIONS_LIMITED_SQL =
+            STREAM_TRANSACTIONS_SQL + "LIMIT ?\n";
 
     private static final String PERIODIC_TRANSACTION_REPORT_SQL =
             """
@@ -175,6 +209,70 @@ ORDER BY b.bucket ASC
 """;
 
     private final JdbcClient jdbcClient;
+    private final JdbcTemplate jdbcTemplate;
+
+    /**
+     * Streams completed business transactions in {@code [fromInstant, toExclusiveInstant)} using a
+     * forward-only PostgreSQL cursor ({@code fetchSize = 1000}) ordered by {@code created_at DESC,
+     * id DESC} without buffering rows in heap memory (AC 2, L3-07, G-05, NFR-2, ADR-014).
+     *
+     * @param fromInstant inclusive lower timestamp bound
+     * @param toExclusiveInstant exclusive upper timestamp bound
+     * @param type optional transaction type filter
+     * @param maxRows optional row limit (e.g., {@code 1000} for PDF exports, {@code null} for full
+     *     Excel exports)
+     * @param rowConsumer consumer invoked for each streamed row
+     */
+    public void streamTransactionsInPeriod(
+            Instant fromInstant,
+            Instant toExclusiveInstant,
+            TransactionType type,
+            Integer maxRows,
+            Consumer<TransactionExportRow> rowConsumer) {
+        boolean limited = maxRows != null && maxRows > 0;
+        String sql = limited ? STREAM_TRANSACTIONS_LIMITED_SQL : STREAM_TRANSACTIONS_SQL;
+        String typeName = type != null ? type.name() : null;
+
+        jdbcTemplate.query(
+                connection -> {
+                    PreparedStatement ps =
+                            connection.prepareStatement(
+                                    sql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+                    ps.setFetchSize(STREAM_FETCH_SIZE);
+                    ps.setObject(1, OffsetDateTime.ofInstant(fromInstant, ZoneOffset.UTC));
+                    ps.setObject(2, OffsetDateTime.ofInstant(toExclusiveInstant, ZoneOffset.UTC));
+                    ps.setObject(3, typeName, Types.VARCHAR);
+                    ps.setObject(4, typeName, Types.VARCHAR);
+                    if (limited) {
+                        ps.setInt(5, maxRows);
+                    }
+                    return ps;
+                },
+                (RowCallbackHandler)
+                        rs -> {
+                            Object srcObj = rs.getObject("source_account_id");
+                            Object tgtObj = rs.getObject("target_account_id");
+                            Long sourceAccountId =
+                                    srcObj instanceof Number n ? n.longValue() : null;
+                            Long targetAccountId =
+                                    tgtObj instanceof Number n ? n.longValue() : null;
+                            OffsetDateTime createdOdt =
+                                    rs.getObject("created_at", OffsetDateTime.class);
+
+                            rowConsumer.accept(
+                                    new TransactionExportRow(
+                                            rs.getString("reference_no"),
+                                            rs.getString("type"),
+                                            rs.getString("status"),
+                                            sourceAccountId,
+                                            targetAccountId,
+                                            scaleMoney(rs.getBigDecimal("amount")),
+                                            scaleMoney(rs.getBigDecimal("fee")),
+                                            rs.getString("location"),
+                                            rs.getString("description"),
+                                            createdOdt != null ? createdOdt.toInstant() : null));
+                        });
+    }
 
     /**
      * Aggregates completed business transactions (excluding {@code REVERSED} and {@code REVERSAL})
