@@ -36,6 +36,4 @@ Thư mục này chứa các ghi chú kỹ thuật (Developer Notes) cho từng P
 | **4.1** | Customer Classification (`INDIVIDUAL` / `BUSINESS`) & Effective Limit Capping (`min(accountLimit, customerTypeMaxLimit)`) | L3-05, L3-06, FR-18, FR-5 | [#34](https://github.com/tsennguyen/corebank-java-assessment/pull/34) | [4-1-customer-type-limits.md](4-1-customer-type-limits.md) |
 | **4.2** | Periodic Transaction Reports (`WEEK`, `QUARTER`, `YEAR` SQL `date_trunc` Aggregation in `Asia/Ho_Chi_Minh`) | L3-01, L3-02, G-05, FR-19, NFR-2 | [#35](https://github.com/tsennguyen/corebank-java-assessment/pull/35) | [4-2-periodic-transaction-reports.md](4-2-periodic-transaction-reports.md) |
 | **4.3** | Real-time Anomaly Detection (`AMOUNT_THRESHOLD`, `VELOCITY` Redis ZSET / `ArrayDeque` Sliding Window on `@Async` Virtual Threads) | L3-03, L3-04, L3-10, FR-22, NFR-4 | [#36](https://github.com/tsennguyen/corebank-java-assessment/pull/36) | [4-3-real-time-anomaly-detection.md](4-3-real-time-anomaly-detection.md) |
-
-
-
+| **4.4** | Alert Management (`GET/POST /api/v1/alerts`) & Historical Fraud Scan (`POST /api/v1/fraud/scans` PostgreSQL Window Function) | L3-04, G-05, FR-23, NFR-2 | [#37](https://github.com/tsennguyen/corebank-java-assessment/pull/37) | [4-4-alert-management-and-scan-api.md](4-4-alert-management-and-scan-api.md) |

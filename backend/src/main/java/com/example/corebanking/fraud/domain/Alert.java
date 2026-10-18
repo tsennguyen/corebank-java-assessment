@@ -11,6 +11,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import java.time.Instant;
 import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -99,6 +100,21 @@ public class Alert extends BaseEntity {
      * @throws InvalidStatusTransitionException (HTTP 409) when the transition is invalid
      */
     public void transitionStatus(AlertStatus targetStatus, String actor, String note) {
+        transitionStatus(targetStatus, actor, note, null);
+    }
+
+    /**
+     * Transitions the alert to {@code targetStatus} and records the explicit {@code updatedAt}
+     * timestamp.
+     *
+     * @param targetStatus target alert status
+     * @param actor username of the administrator handling the alert
+     * @param note optional investigation or resolution note
+     * @param updatedAt explicit update timestamp (optional)
+     * @throws InvalidStatusTransitionException (HTTP 409) when the transition is invalid
+     */
+    public void transitionStatus(
+            AlertStatus targetStatus, String actor, String note, Instant updatedAt) {
         if (targetStatus == null || !this.status.canTransitionTo(targetStatus)) {
             throw new InvalidStatusTransitionException(
                     String.format(
@@ -109,6 +125,9 @@ public class Alert extends BaseEntity {
         this.handledBy = actor;
         if (note != null && !note.isBlank()) {
             this.resolutionNote = note.trim();
+        }
+        if (updatedAt != null) {
+            setUpdatedAt(updatedAt);
         }
     }
 }
