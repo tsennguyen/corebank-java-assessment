@@ -1,8 +1,10 @@
 package com.example.corebanking.report.api;
 
 import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
+import com.example.corebanking.report.api.dto.TrendPointResponse;
 import com.example.corebanking.report.application.ReportService;
 import com.example.corebanking.report.domain.ReportPeriod;
+import com.example.corebanking.report.domain.TrendGranularity;
 import com.example.corebanking.transaction.domain.TransactionType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,7 +24,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** REST controller exposing periodic transaction analytics reports (L3-01, L3-02, G-05, FR-19). */
+/**
+ * REST controller exposing periodic transaction analytics reports and time-series trends (L3-01,
+ * L3-02, L3-08, G-05, FR-19, FR-20).
+ */
 @RestController
 @RequestMapping("/api/v1/reports")
 @RequiredArgsConstructor
@@ -95,5 +100,73 @@ public class ReportController {
                     TransactionType type) {
         return ResponseEntity.ok(
                 reportService.getPeriodicTransactionReport(period, from, to, type));
+    }
+
+    /**
+     * Retrieves chronological trend series of transaction volume, fee revenue, and closing balance
+     * (system-wide or single-account) grouped by {@code DAY}, {@code WEEK}, or {@code MONTH}
+     * (L3-08, FR-20).
+     *
+     * @param granularity bucket granularity ({@code DAY}, {@code WEEK}, {@code MONTH})
+     * @param from inclusive start date
+     * @param to inclusive end date
+     * @param accountId optional account ID for single-account balance trends
+     * @return chronological list of trend points
+     */
+    @GetMapping("/trends")
+    @Operation(
+            summary = "Get transaction volume, fee, and closing balance trend series",
+            description =
+                    "Returns continuous time-series trend buckets (DAY, WEEK, or MONTH) with"
+                            + " transaction count, total amount, total fee, and reconstructed"
+                            + " closing balance (system-wide using system_balance_delta window"
+                            + " function, or single-account using last balance_after per bucket"
+                            + " with forward-fill) (L3-08, FR-20, ADR-013).")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Trend series retrieved successfully"),
+        @ApiResponse(
+                responseCode = "400",
+                description =
+                        "Invalid granularity, missing dates, 'to' before 'from', or range > 366"
+                                + " days",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Access denied (requires ADMIN role)",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Specified accountId not found",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<List<TrendPointResponse>> getTrendSeries(
+            @Parameter(
+                            description = "Bucket granularity (DAY, WEEK, MONTH)",
+                            example = "DAY",
+                            required = true)
+                    @RequestParam("granularity")
+                    TrendGranularity granularity,
+            @Parameter(
+                            description = "Inclusive start date (yyyy-MM-dd, Asia/Ho_Chi_Minh)",
+                            example = "2026-10-01",
+                            required = true)
+                    @RequestParam("from")
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                    LocalDate from,
+            @Parameter(
+                            description = "Inclusive end date (yyyy-MM-dd, Asia/Ho_Chi_Minh)",
+                            example = "2026-10-14",
+                            required = true)
+                    @RequestParam("to")
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                    LocalDate to,
+            @Parameter(
+                            description =
+                                    "Optional account ID; when omitted, returns system-wide"
+                                            + " closing balances",
+                            example = "1")
+                    @RequestParam(value = "accountId", required = false)
+                    Long accountId) {
+        return ResponseEntity.ok(reportService.getTrendSeries(granularity, from, to, accountId));
     }
 }

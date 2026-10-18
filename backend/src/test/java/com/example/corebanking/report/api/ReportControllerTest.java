@@ -12,9 +12,12 @@ import com.example.corebanking.common.api.RequestIdFilter;
 import com.example.corebanking.common.config.ClockConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
+import com.example.corebanking.common.domain.ResourceNotFoundException;
 import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
+import com.example.corebanking.report.api.dto.TrendPointResponse;
 import com.example.corebanking.report.application.ReportService;
 import com.example.corebanking.report.domain.ReportPeriod;
+import com.example.corebanking.report.domain.TrendGranularity;
 import com.example.corebanking.transaction.domain.TransactionType;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -194,6 +197,87 @@ class ReportControllerTest {
                                 .param("to", "2026-06-30"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+
+        verifyNoInteractions(reportService);
+    }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/reports/trends returns 200 with system-wide or account trend points for"
+                    + " ADMIN (L3-08, FR-20)")
+    void getTrendSeries_whenValidParams_shouldReturn200WithTrendPoints() throws Exception {
+        LocalDate from = LocalDate.of(2026, 10, 1);
+        LocalDate to = LocalDate.of(2026, 10, 2);
+
+        List<TrendPointResponse> points =
+                List.of(
+                        new TrendPointResponse(
+                                LocalDate.of(2026, 10, 1),
+                                3L,
+                                new BigDecimal("15000000.00"),
+                                new BigDecimal("6000.00"),
+                                new BigDecimal("120000000.00")),
+                        new TrendPointResponse(
+                                LocalDate.of(2026, 10, 2),
+                                0L,
+                                new BigDecimal("0.00"),
+                                new BigDecimal("0.00"),
+                                new BigDecimal("120000000.00")));
+
+        when(reportService.getTrendSeries(TrendGranularity.DAY, from, to, 15L)).thenReturn(points);
+
+        mockMvc.perform(
+                        get("/api/v1/reports/trends")
+                                .param("granularity", "DAY")
+                                .param("from", "2026-10-01")
+                                .param("to", "2026-10-02")
+                                .param("accountId", "15"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].bucket").value("2026-10-01"))
+                .andExpect(jsonPath("$[0].txCount").value(3))
+                .andExpect(jsonPath("$[0].totalAmount").value(15000000.00))
+                .andExpect(jsonPath("$[0].totalFee").value(6000.00))
+                .andExpect(jsonPath("$[0].closingBalance").value(120000000.00))
+                .andExpect(jsonPath("$[1].bucket").value("2026-10-02"))
+                .andExpect(jsonPath("$[1].txCount").value(0))
+                .andExpect(jsonPath("$[1].closingBalance").value(120000000.00));
+    }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/reports/trends returns 404 RESOURCE_NOT_FOUND when accountId does not"
+                    + " exist")
+    void getTrendSeries_whenAccountNotFound_shouldReturn404() throws Exception {
+        LocalDate from = LocalDate.of(2026, 10, 1);
+        LocalDate to = LocalDate.of(2026, 10, 5);
+
+        when(reportService.getTrendSeries(TrendGranularity.DAY, from, to, 999L))
+                .thenThrow(new ResourceNotFoundException("Account", 999L));
+
+        mockMvc.perform(
+                        get("/api/v1/reports/trends")
+                                .param("granularity", "DAY")
+                                .param("from", "2026-10-01")
+                                .param("to", "2026-10-05")
+                                .param("accountId", "999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/reports/trends returns 400 VALIDATION_FAILED when granularity is invalid"
+                    + " or missing")
+    void getTrendSeries_whenInvalidGranularity_shouldReturn400() throws Exception {
+        mockMvc.perform(
+                        get("/api/v1/reports/trends")
+                                .param("granularity", "HOUR")
+                                .param("from", "2026-10-01")
+                                .param("to", "2026-10-05"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("granularity"));
 
         verifyNoInteractions(reportService);
     }
