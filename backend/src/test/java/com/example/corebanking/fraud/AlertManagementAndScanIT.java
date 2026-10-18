@@ -338,21 +338,33 @@ class AlertManagementAndScanIT extends IntegrationTestBase {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("INVALID_STATUS_TRANSITION"));
 
-        // 5. Direct NEW -> FALSE_POSITIVE is allowed
+        // 5. Direct NEW -> FALSE_POSITIVE is allowed (also test explicit version = 0 matching)
         mockMvc.perform(
                         post("/api/v1/alerts/{id}/status", alert2.getId())
                                 .with(adminJwt())
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content(
                                         """
-{"targetStatus": "FALSE_POSITIVE", "note": "Known corporate payroll"}
+{"targetStatus": "FALSE_POSITIVE", "note": "Known corporate payroll", "version": 0}
 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("FALSE_POSITIVE"))
                 .andExpect(jsonPath("$.resolutionNote").value("Known corporate payroll"));
 
-        // 6. Verify EXPLAIN plan uses idx_alert_status_created when sequential scan is disabled
-        List<String> planLines =
+        // 6. Stale optimistic locking version must return 409 CONCURRENT_MODIFICATION
+        mockMvc.perform(
+                        post("/api/v1/alerts/{id}/status", alert2.getId())
+                                .with(adminJwt())
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(
+                                        """
+{"targetStatus": "INVESTIGATING", "note": "Stale version retry", "version": 0}
+"""))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONCURRENT_MODIFICATION"));
+
+        // 7. Verify EXPLAIN plans for core.alert index scan and SQL Window Function (WindowAgg)
+        List<String> alertPlanLines =
                 jdbcClient
                         .sql(
                                 """
@@ -365,8 +377,38 @@ class AlertManagementAndScanIT extends IntegrationTestBase {
                                 """)
                         .query(String.class)
                         .list();
-        String planText = String.join("\n", planLines);
-        assertThat(planText).isNotBlank();
+        assertThat(String.join("\n", alertPlanLines)).isNotBlank();
+
+        List<String> windowPlanLines =
+                jdbcClient
+                        .sql(
+                                """
+EXPLAIN (COSTS OFF)
+WITH windowed_outgoing AS (
+    SELECT
+        t.id AS transaction_id,
+        t.source_account_id AS account_id,
+        t.created_at,
+        COUNT(*) OVER (
+            PARTITION BY t.source_account_id
+            ORDER BY t.created_at
+            RANGE BETWEEN make_interval(secs => 60.0) PRECEDING AND CURRENT ROW
+        ) AS tx_count_in_window
+    FROM core.transaction t
+    WHERE t.status = 'COMPLETED'
+      AND t.type IN ('WITHDRAWAL', 'TRANSFER', 'PAYMENT')
+      AND t.source_account_id IS NOT NULL
+      AND t.created_at >= TIMESTAMPTZ '2026-08-20T06:59:00Z'
+      AND t.created_at <= TIMESTAMPTZ '2026-08-20T09:00:00Z'
+)
+SELECT transaction_id, account_id, created_at, tx_count_in_window
+FROM windowed_outgoing
+WHERE created_at >= TIMESTAMPTZ '2026-08-20T07:00:00Z'
+  AND tx_count_in_window > 5
+""")
+                        .query(String.class)
+                        .list();
+        assertThat(String.join("\n", windowPlanLines)).contains("WindowAgg");
     }
 
     private AccountResponse createAccountWithLimits(String txLimit, String dailyLimit) {

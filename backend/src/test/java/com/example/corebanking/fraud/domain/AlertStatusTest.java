@@ -151,7 +151,20 @@ class AlertStatusTest {
                 .isInstanceOf(InvalidStatusTransitionException.class)
                 .hasMessageContaining("Cannot transition alert status from RESOLVED to NEW");
 
-        // 5. Missing alert -> 404 ResourceNotFoundException
+        // 5. Stale optimistic locking version -> 409 CONCURRENT_MODIFICATION
+        assertThatThrownBy(
+                        () ->
+                                alertService.updateStatus(
+                                        1L,
+                                        new UpdateAlertStatusRequest(
+                                                AlertStatus.FALSE_POSITIVE, "Stale version", 99L)))
+                .isInstanceOf(BusinessRuleException.class)
+                .satisfies(
+                        ex ->
+                                assertThat(((BusinessRuleException) ex).getErrorCode())
+                                        .isEqualTo(ErrorCode.CONCURRENT_MODIFICATION));
+
+        // 6. Missing alert -> 404 ResourceNotFoundException
         when(alertRepository.findById(999L)).thenReturn(Optional.empty());
         assertThatThrownBy(
                         () ->

@@ -19,6 +19,7 @@ import jakarta.validation.constraints.Size;
 @Schema(description = "Yêu cầu chuyển trạng thái xử lý cảnh báo (L3-04, FR-23)")
 public record UpdateAlertStatusRequest(
         @NotNull(message = "targetStatus must not be null")
+                @JsonAlias("status")
                 @Schema(
                         description = "Trạng thái đích (INVESTIGATING, RESOLVED, FALSE_POSITIVE)",
                         example = "INVESTIGATING")
@@ -28,7 +29,18 @@ public record UpdateAlertStatusRequest(
                 @Schema(
                         description = "Ghi chú điều tra hoặc kết luận xử lý",
                         example = "Checking customer call log")
-                String note) {
+                String note,
+        @Schema(
+                        description =
+                                "Phiên bản bản ghi hiện tại để kiểm soát đồng thời lạc quan (tùy"
+                                        + " chọn)",
+                        example = "0")
+                Long version) {
+
+    /** Convenience constructor when updating status and note without explicit version. */
+    public UpdateAlertStatusRequest(AlertStatus targetStatus, String note) {
+        this(targetStatus, note, null);
+    }
 
     @JsonAnySetter
     public void rejectUnknownProperty(String key, Object value) {

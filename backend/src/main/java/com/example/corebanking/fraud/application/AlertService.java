@@ -27,6 +27,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -234,7 +235,7 @@ ON CONFLICT (transaction_id, rule_code) DO NOTHING
      * resolution note (L3-04, FR-23).
      *
      * @param id alert ID
-     * @param request target status and optional note
+     * @param request target status, optional note, and optional version
      * @return updated alert response
      */
     @Transactional
@@ -250,6 +251,21 @@ ON CONFLICT (transaction_id, rule_code) DO NOTHING
                 alertRepository
                         .findById(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Alert", id));
+
+        if (request.version() != null && !Objects.equals(alert.getVersion(), request.version())) {
+            log.warn(
+                    "Optimistic concurrency conflict on Alert [id={}]: expected version={},"
+                            + " actual={}",
+                    alert.getId(),
+                    request.version(),
+                    alert.getVersion());
+            throw new BusinessRuleException(
+                    ErrorCode.CONCURRENT_MODIFICATION,
+                    "Alert has been modified by another concurrent transaction. Expected version "
+                            + request.version()
+                            + " but found "
+                            + alert.getVersion());
+        }
 
         AlertStatus previousStatus = alert.getStatus();
         String actor = resolveCurrentActor();
@@ -413,7 +429,7 @@ ON CONFLICT (transaction_id, rule_code) DO NOTHING
         } catch (DateTimeParseException ignored) {
             // Fall through to Instant / OffsetDateTime parsing
         }
-        return parseInstantOrThrow(trimmed, "to").plusNanos(1);
+        return parseInstantOrThrow(trimmed, "to").plus(1, ChronoUnit.MICROS);
     }
 
     private Instant parseScanStartInstant(String rawFrom, ZoneId zone) {
@@ -430,7 +446,11 @@ ON CONFLICT (transaction_id, rule_code) DO NOTHING
         String trimmed = rawTo.trim();
         try {
             LocalDate parsedDate = LocalDate.parse(trimmed);
-            return parsedDate.plusDays(1).atStartOfDay(zone).toInstant().minusNanos(1);
+            return parsedDate
+                    .plusDays(1)
+                    .atStartOfDay(zone)
+                    .toInstant()
+                    .minus(1, ChronoUnit.MICROS);
         } catch (DateTimeParseException ignored) {
             return parseInstantOrThrow(trimmed, "to");
         }
