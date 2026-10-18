@@ -2,8 +2,11 @@ package com.example.corebanking.report.application;
 
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
+import com.example.corebanking.common.domain.ResourceNotFoundException;
 import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
+import com.example.corebanking.report.api.dto.TrendPointResponse;
 import com.example.corebanking.report.domain.ReportPeriod;
+import com.example.corebanking.report.domain.TrendGranularity;
 import com.example.corebanking.report.infrastructure.ReportRepository;
 import com.example.corebanking.transaction.domain.TransactionType;
 import java.time.Clock;
@@ -17,8 +20,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Application service providing periodic transaction analytics and date-range boundary validation
- * (L3-01, L3-02, G-05, FR-19).
+ * Application service providing periodic transaction analytics, time-series trend reconstructions,
+ * and date-range boundary validation (L3-01, L3-02, L3-08, G-05, FR-19, FR-20).
  */
 @Service
 @RequiredArgsConstructor
@@ -62,6 +65,48 @@ public class ReportService {
 
         return reportRepository.findPeriodicTransactionReport(
                 period, fromInstant, toExclusiveInstant, type, businessZone);
+    }
+
+    /**
+     * Computes a chronological time-series trend of transaction volume, fee revenue, and closing
+     * balance (either system-wide or for a specific account) across all buckets in {@code [from,
+     * to]} (L3-08, FR-20, ADR-013).
+     *
+     * @param granularity bucket granularity ({@code DAY}, {@code WEEK}, or {@code MONTH})
+     * @param from inclusive start date in business timezone
+     * @param to inclusive end date in business timezone
+     * @param accountId optional account ID; when {@code null}, returns system-wide trends
+     * @return chronological list of trend points
+     */
+    @Transactional(readOnly = true)
+    public List<TrendPointResponse> getTrendSeries(
+            TrendGranularity granularity, LocalDate from, LocalDate to, Long accountId) {
+        if (granularity == null) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED, "Trend granularity is required");
+        }
+        validateDateRange(from, to);
+
+        ZoneId businessZone = clock.getZone();
+        Instant fromInstant = from.atStartOfDay(businessZone).toInstant();
+        Instant toExclusiveInstant = to.plusDays(1).atStartOfDay(businessZone).toInstant();
+
+        if (accountId != null) {
+            if (!reportRepository.existsAccountById(accountId)) {
+                throw new ResourceNotFoundException("Account", accountId);
+            }
+            return reportRepository.findAccountTrendSeries(
+                    granularity,
+                    accountId,
+                    from,
+                    to,
+                    fromInstant,
+                    toExclusiveInstant,
+                    businessZone);
+        }
+
+        return reportRepository.findSystemTrendSeries(
+                granularity, from, to, fromInstant, toExclusiveInstant, businessZone);
     }
 
     /**
