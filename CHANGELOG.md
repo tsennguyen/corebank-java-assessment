@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Streaming PDF report export (`GET /api/v1/reports/export?format=PDF`) using `OpenPDF 2.0.2` with embedded `DejaVuSans` Vietnamese Unicode fonts, 3 embedded PNG trend charts, and a 1,000-row detail table cap (#41).
   - Spring Boot Actuator security hardening, custom Micrometer business metrics (`banking.transactions`, `banking.alerts.raised`, `banking.recurring.executed`), Java 21 Virtual Threads anti-pinning verification (`ReentrantLock`), and bounded HikariCP pool sizing (#40).
 - **Delivery, Coverage & Security Scanning:**
-  - Automated GitHub Pages JaCoCo coverage report publication (`coverage-pages.yml`), CodeQL SAST & Dependency Vulnerability Review (`security.yml`), and weekly Dependabot configuration (`dependabot.yml`).
+  - Automated GitHub Pages JaCoCo coverage report publication (`coverage-pages.yml`), CodeQL SAST & Dependency Vulnerability Review (`security.yml`), and weekly Dependabot configuration (`dependabot.yml`) (#43).
   - Complete Vietnamese technical documentation (`README.md`, `docs/architecture.md`, `docs/erd.md`, `docs/adr.md` `ADR-001`–`ADR-015`, and `docs/dev-notes/`) (#42).
 
 ## [0.1.0] - 2026-10-14
