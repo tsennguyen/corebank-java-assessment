@@ -171,6 +171,40 @@ class DeploymentConfigTest {
                 .contains("Idempotent-Replayed");
     }
 
+    @Test
+    @DisplayName(
+            "Performance benchmark suite should include cloud-guarded 1M-row seed SQL, k6 script,"
+                    + " and EXPLAIN ANALYZE results")
+    void shouldProvideLargeSeedK6AndBenchmarkResults() throws Exception {
+        String seedSql =
+                Files.readString(
+                        resolveRepoRootFile("perf/seed-large.sql"), StandardCharsets.UTF_8);
+        String k6Script =
+                Files.readString(
+                        resolveRepoRootFile("perf/k6-transactions-search.js"),
+                        StandardCharsets.UTF_8);
+        String resultsMd =
+                Files.readString(resolveRepoRootFile("perf/RESULTS.md"), StandardCharsets.UTF_8);
+
+        assertThat(seedSql)
+                .contains("SAFETY ABORT")
+                .contains("supabase_admin")
+                .contains("generate_series(1, 10000)")
+                .contains("generate_series(1, 1000000)")
+                .contains("VACUUM ANALYZE core.transaction");
+        assertThat(k6Script)
+                .contains("search_indexed")
+                .contains("recent_cached")
+                .contains("/api/v1/transactions")
+                .contains("/api/v1/accounts/");
+        assertThat(resultsMd)
+                .contains("121.007 ms")
+                .contains("0.937 ms")
+                .contains("0.179 ms")
+                .contains("Index Only Scan")
+                .contains("Heap Fetches: 0");
+    }
+
     private static Path resolveBackendFile(String relativePath) {
         Path cwd = Path.of("").toAbsolutePath();
         if (Files.exists(cwd.resolve(relativePath))) {
