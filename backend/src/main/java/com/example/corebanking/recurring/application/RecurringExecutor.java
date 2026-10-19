@@ -7,6 +7,7 @@ import com.example.corebanking.recurring.domain.RecurringTransaction;
 import com.example.corebanking.recurring.infrastructure.RecurringTransactionRepository;
 import com.example.corebanking.transaction.application.TransactionService;
 import com.example.corebanking.transaction.domain.TransactionType;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -14,6 +15,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,27 +24,43 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Application service that claims and executes a single due {@link RecurringTransaction}
  * instruction inside an isolated physical transaction ({@link Propagation#REQUIRES_NEW}) using
- * {@code FOR UPDATE SKIP LOCKED} (L2-07, FR-17, ADR-011).
+ * {@code FOR UPDATE SKIP LOCKED} (L2-07, L3-09, FR-17, FR-24, ADR-011).
  */
 @Service
 public class RecurringExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(RecurringExecutor.class);
 
+    public static final String RECURRING_EXECUTED_METRIC = "banking.recurring.executed";
+    private static final String OUTCOME_SUCCESS = "SUCCESS";
+    private static final String OUTCOME_FAILURE = "FAILURE";
+
     private final RecurringTransactionRepository recurringRepository;
     private final TransactionService transactionService;
     private final RecurringProperties properties;
     private final Clock clock;
+    @Nullable private final MeterRegistry meterRegistry;
 
     public RecurringExecutor(
             RecurringTransactionRepository recurringRepository,
             TransactionService transactionService,
             RecurringProperties properties,
             Clock clock) {
+        this(recurringRepository, transactionService, properties, clock, null);
+    }
+
+    @Autowired
+    public RecurringExecutor(
+            RecurringTransactionRepository recurringRepository,
+            TransactionService transactionService,
+            RecurringProperties properties,
+            Clock clock,
+            @Nullable MeterRegistry meterRegistry) {
         this.recurringRepository = recurringRepository;
         this.transactionService = transactionService;
         this.properties = properties;
         this.clock = clock;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -84,6 +103,7 @@ public class RecurringExecutor {
 
             recurring.recordSuccess(now, clock.getZone());
             recurringRepository.saveAndFlush(recurring);
+            incrementRecurringExecutedMetric(OUTCOME_SUCCESS);
 
             log.info(
                     "Recurring transaction executed successfully [recurringId={}, ref={},"
@@ -96,6 +116,7 @@ public class RecurringExecutor {
             String errorMsg = ex.getErrorCode().name() + ": " + ex.getMessage();
             recurring.recordFailure(errorMsg, now, clock.getZone(), properties.getMaxFailures());
             recurringRepository.saveAndFlush(recurring);
+            incrementRecurringExecutedMetric(OUTCOME_FAILURE);
 
             log.warn(
                     "Recurring transaction failed with business rule error [recurringId={}, ref={},"
@@ -110,6 +131,7 @@ public class RecurringExecutor {
             String errorMsg = "RESOURCE_NOT_FOUND: " + ex.getMessage();
             recurring.recordFailure(errorMsg, now, clock.getZone(), properties.getMaxFailures());
             recurringRepository.saveAndFlush(recurring);
+            incrementRecurringExecutedMetric(OUTCOME_FAILURE);
 
             log.warn(
                     "Recurring transaction failed with missing account [recurringId={}, ref={},"
@@ -123,6 +145,12 @@ public class RecurringExecutor {
         }
 
         return true;
+    }
+
+    private void incrementRecurringExecutedMetric(String outcome) {
+        if (meterRegistry != null) {
+            meterRegistry.counter(RECURRING_EXECUTED_METRIC, "outcome", outcome).increment();
+        }
     }
 
     static String formatPeriodReferenceNo(Long recurringId, LocalDate periodDate) {

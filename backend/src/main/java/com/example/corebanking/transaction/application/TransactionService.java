@@ -27,12 +27,15 @@ import com.example.corebanking.transaction.domain.event.TransactionMetadataUpdat
 import com.example.corebanking.transaction.infrastructure.TransactionReferenceGenerator;
 import com.example.corebanking.transaction.infrastructure.TransactionRepository;
 import com.example.corebanking.transaction.infrastructure.TransactionSpecifications;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +46,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.lang.Nullable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -59,6 +63,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class TransactionService {
 
     private static final Logger log = LoggerFactory.getLogger(TransactionService.class);
+    public static final String TRANSACTIONS_METRIC = "banking.transactions";
+    private static final String OUTCOME_SUCCESS = "SUCCESS";
+    private static final String OUTCOME_FAILURE = "FAILURE";
     private static final Set<String> ALLOWED_SORT_FIELDS =
             Set.of("id", "createdAt", "amount", "fee");
 
@@ -69,7 +76,8 @@ public class TransactionService {
     private final LimitPolicy limitPolicy;
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
-    private final IdempotencyService idempotencyService;
+    @Nullable private final IdempotencyService idempotencyService;
+    @Nullable private final MeterRegistry meterRegistry;
 
     public TransactionService(
             AccountRepository accountRepository,
@@ -87,6 +95,28 @@ public class TransactionService {
                 limitPolicy,
                 clock,
                 eventPublisher,
+                null,
+                null);
+    }
+
+    public TransactionService(
+            AccountRepository accountRepository,
+            TransactionRepository transactionRepository,
+            TransactionReferenceGenerator referenceGenerator,
+            FeePolicy feePolicy,
+            LimitPolicy limitPolicy,
+            Clock clock,
+            ApplicationEventPublisher eventPublisher,
+            @Nullable IdempotencyService idempotencyService) {
+        this(
+                accountRepository,
+                transactionRepository,
+                referenceGenerator,
+                feePolicy,
+                limitPolicy,
+                clock,
+                eventPublisher,
+                idempotencyService,
                 null);
     }
 
@@ -99,7 +129,8 @@ public class TransactionService {
             LimitPolicy limitPolicy,
             Clock clock,
             ApplicationEventPublisher eventPublisher,
-            IdempotencyService idempotencyService) {
+            @Nullable IdempotencyService idempotencyService,
+            @Nullable MeterRegistry meterRegistry) {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.referenceGenerator = referenceGenerator;
@@ -108,6 +139,7 @@ public class TransactionService {
         this.clock = clock;
         this.eventPublisher = eventPublisher;
         this.idempotencyService = idempotencyService;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -145,48 +177,53 @@ public class TransactionService {
     }
 
     private TransactionResponse executeDeposit(DepositRequest request) {
-        Account account =
-                accountRepository
-                        .findByIdForUpdate(request.accountId())
-                        .orElseThrow(
-                                () ->
-                                        new ResourceNotFoundException(
-                                                "Account", request.accountId()));
+        return recordTransactionTimer(
+                TransactionType.DEPOSIT,
+                () -> {
+                    Account account =
+                            accountRepository
+                                    .findByIdForUpdate(request.accountId())
+                                    .orElseThrow(
+                                            () ->
+                                                    new ResourceNotFoundException(
+                                                            "Account", request.accountId()));
 
-        Money depositAmount = Money.of(request.amount());
-        account.credit(depositAmount);
+                    Money depositAmount = Money.of(request.amount());
+                    account.credit(depositAmount);
 
-        String referenceNo = referenceGenerator.generate();
-        Transaction transaction =
-                Transaction.createDeposit(
-                        referenceNo,
-                        account.getId(),
-                        request.amount(),
-                        account.getBalance(),
-                        request.location(),
-                        request.description());
+                    String referenceNo = referenceGenerator.generate();
+                    Transaction transaction =
+                            Transaction.createDeposit(
+                                    referenceNo,
+                                    account.getId(),
+                                    request.amount(),
+                                    account.getBalance(),
+                                    request.location(),
+                                    request.description());
 
-        Transaction saved = transactionRepository.save(transaction);
-        eventPublisher.publishEvent(
-                new TransactionCompletedEvent(
-                        saved.getId(),
-                        saved.getReferenceNo(),
-                        saved.getType(),
-                        saved.getAmount(),
-                        saved.getFee(),
-                        saved.getSourceAccountId(),
-                        saved.getTargetAccountId(),
-                        clock.instant()));
+                    Transaction saved = transactionRepository.save(transaction);
+                    eventPublisher.publishEvent(
+                            new TransactionCompletedEvent(
+                                    saved.getId(),
+                                    saved.getReferenceNo(),
+                                    saved.getType(),
+                                    saved.getAmount(),
+                                    saved.getFee(),
+                                    saved.getSourceAccountId(),
+                                    saved.getTargetAccountId(),
+                                    clock.instant()));
 
-        log.info(
-                "Deposit completed [txnId={}, ref={}, accountId={}, amount={}, balanceAfter={}]",
-                saved.getId(),
-                saved.getReferenceNo(),
-                account.getId(),
-                saved.getAmount(),
-                saved.getTargetBalanceAfter());
+                    log.info(
+                            "Deposit completed [txnId={}, ref={}, accountId={}, amount={},"
+                                    + " balanceAfter={}]",
+                            saved.getId(),
+                            saved.getReferenceNo(),
+                            account.getId(),
+                            saved.getAmount(),
+                            saved.getTargetBalanceAfter());
 
-        return TransactionResponse.from(saved);
+                    return TransactionResponse.from(saved);
+                });
     }
 
     /**
@@ -225,58 +262,62 @@ public class TransactionService {
     }
 
     private TransactionResponse executeWithdraw(WithdrawalRequest request) {
-        Account account =
-                accountRepository
-                        .findByIdForUpdate(request.accountId())
-                        .orElseThrow(
-                                () ->
-                                        new ResourceNotFoundException(
-                                                "Account", request.accountId()));
+        return recordTransactionTimer(
+                TransactionType.WITHDRAWAL,
+                () -> {
+                    Account account =
+                            accountRepository
+                                    .findByIdForUpdate(request.accountId())
+                                    .orElseThrow(
+                                            () ->
+                                                    new ResourceNotFoundException(
+                                                            "Account", request.accountId()));
 
-        Money amount = Money.of(request.amount());
-        BigDecimal dailySpent =
-                transactionRepository.sumOutgoingAmountSince(
-                        account.getId(), TransactionStatus.COMPLETED, getStartOfDay());
-        limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
+                    Money amount = Money.of(request.amount());
+                    BigDecimal dailySpent =
+                            transactionRepository.sumOutgoingAmountSince(
+                                    account.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+                    limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
 
-        Money fee = feePolicy.calculateFee(TransactionType.WITHDRAWAL, amount);
-        Money totalDebit = amount.plus(fee);
-        account.debit(totalDebit);
+                    Money fee = feePolicy.calculateFee(TransactionType.WITHDRAWAL, amount);
+                    Money totalDebit = amount.plus(fee);
+                    account.debit(totalDebit);
 
-        String referenceNo = referenceGenerator.generate();
-        Transaction transaction =
-                Transaction.createWithdrawal(
-                        referenceNo,
-                        account.getId(),
-                        amount.getAmount(),
-                        fee.getAmount(),
-                        account.getBalance(),
-                        request.location(),
-                        request.description());
+                    String referenceNo = referenceGenerator.generate();
+                    Transaction transaction =
+                            Transaction.createWithdrawal(
+                                    referenceNo,
+                                    account.getId(),
+                                    amount.getAmount(),
+                                    fee.getAmount(),
+                                    account.getBalance(),
+                                    request.location(),
+                                    request.description());
 
-        Transaction saved = transactionRepository.save(transaction);
-        eventPublisher.publishEvent(
-                new TransactionCompletedEvent(
-                        saved.getId(),
-                        saved.getReferenceNo(),
-                        saved.getType(),
-                        saved.getAmount(),
-                        saved.getFee(),
-                        saved.getSourceAccountId(),
-                        saved.getTargetAccountId(),
-                        clock.instant()));
+                    Transaction saved = transactionRepository.save(transaction);
+                    eventPublisher.publishEvent(
+                            new TransactionCompletedEvent(
+                                    saved.getId(),
+                                    saved.getReferenceNo(),
+                                    saved.getType(),
+                                    saved.getAmount(),
+                                    saved.getFee(),
+                                    saved.getSourceAccountId(),
+                                    saved.getTargetAccountId(),
+                                    clock.instant()));
 
-        log.info(
-                "Withdrawal completed [txnId={}, ref={}, accountId={}, amount={}, fee={},"
-                        + " balanceAfter={}]",
-                saved.getId(),
-                saved.getReferenceNo(),
-                account.getId(),
-                saved.getAmount(),
-                saved.getFee(),
-                saved.getSourceBalanceAfter());
+                    log.info(
+                            "Withdrawal completed [txnId={}, ref={}, accountId={}, amount={},"
+                                    + " fee={}, balanceAfter={}]",
+                            saved.getId(),
+                            saved.getReferenceNo(),
+                            account.getId(),
+                            saved.getAmount(),
+                            saved.getFee(),
+                            saved.getSourceBalanceAfter());
 
-        return TransactionResponse.from(saved);
+                    return TransactionResponse.from(saved);
+                });
     }
 
     /**
@@ -315,75 +356,93 @@ public class TransactionService {
     }
 
     private TransactionResponse executeTransfer(TransferRequest request) {
-        if (request.sourceAccountId().equals(request.targetAccountId())) {
-            throw new BusinessRuleException(
-                    ErrorCode.SAME_ACCOUNT_TRANSFER,
-                    "Source and target accounts cannot be identical");
-        }
+        return recordTransactionTimer(
+                TransactionType.TRANSFER,
+                () -> {
+                    if (request.sourceAccountId().equals(request.targetAccountId())) {
+                        throw new BusinessRuleException(
+                                ErrorCode.SAME_ACCOUNT_TRANSFER,
+                                "Source and target accounts cannot be identical");
+                    }
 
-        // Lock accounts in strictly ascending ID order to prevent circular wait deadlock (NC-01)
-        Long firstId = Math.min(request.sourceAccountId(), request.targetAccountId());
-        Long secondId = Math.max(request.sourceAccountId(), request.targetAccountId());
+                    // Lock accounts in strictly ascending ID order to prevent circular wait
+                    // deadlock (NC-01)
+                    Long firstId = Math.min(request.sourceAccountId(), request.targetAccountId());
+                    Long secondId = Math.max(request.sourceAccountId(), request.targetAccountId());
 
-        Account firstAccount =
-                accountRepository
-                        .findByIdForUpdate(firstId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Account", firstId));
-        Account secondAccount =
-                accountRepository
-                        .findByIdForUpdate(secondId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Account", secondId));
+                    Account firstAccount =
+                            accountRepository
+                                    .findByIdForUpdate(firstId)
+                                    .orElseThrow(
+                                            () ->
+                                                    new ResourceNotFoundException(
+                                                            "Account", firstId));
+                    Account secondAccount =
+                            accountRepository
+                                    .findByIdForUpdate(secondId)
+                                    .orElseThrow(
+                                            () ->
+                                                    new ResourceNotFoundException(
+                                                            "Account", secondId));
 
-        Account source = request.sourceAccountId().equals(firstId) ? firstAccount : secondAccount;
-        Account target = request.targetAccountId().equals(firstId) ? firstAccount : secondAccount;
+                    Account source =
+                            request.sourceAccountId().equals(firstId)
+                                    ? firstAccount
+                                    : secondAccount;
+                    Account target =
+                            request.targetAccountId().equals(firstId)
+                                    ? firstAccount
+                                    : secondAccount;
 
-        Money amount = Money.of(request.amount());
-        BigDecimal dailySpent =
-                transactionRepository.sumOutgoingAmountSince(
-                        source.getId(), TransactionStatus.COMPLETED, getStartOfDay());
-        limitPolicy.validateLimits(source, amount, Money.of(dailySpent));
+                    Money amount = Money.of(request.amount());
+                    BigDecimal dailySpent =
+                            transactionRepository.sumOutgoingAmountSince(
+                                    source.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+                    limitPolicy.validateLimits(source, amount, Money.of(dailySpent));
 
-        Money fee = feePolicy.calculateFee(TransactionType.TRANSFER, amount);
-        Money totalDebit = amount.plus(fee);
+                    Money fee = feePolicy.calculateFee(TransactionType.TRANSFER, amount);
+                    Money totalDebit = amount.plus(fee);
 
-        source.debit(totalDebit);
-        target.credit(amount);
+                    source.debit(totalDebit);
+                    target.credit(amount);
 
-        String referenceNo = referenceGenerator.generate();
-        Transaction transaction =
-                Transaction.createTransfer(
-                        referenceNo,
-                        source.getId(),
-                        target.getId(),
-                        amount.getAmount(),
-                        fee.getAmount(),
-                        source.getBalance(),
-                        target.getBalance(),
-                        request.location(),
-                        request.description());
+                    String referenceNo = referenceGenerator.generate();
+                    Transaction transaction =
+                            Transaction.createTransfer(
+                                    referenceNo,
+                                    source.getId(),
+                                    target.getId(),
+                                    amount.getAmount(),
+                                    fee.getAmount(),
+                                    source.getBalance(),
+                                    target.getBalance(),
+                                    request.location(),
+                                    request.description());
 
-        Transaction saved = transactionRepository.save(transaction);
-        eventPublisher.publishEvent(
-                new TransactionCompletedEvent(
-                        saved.getId(),
-                        saved.getReferenceNo(),
-                        saved.getType(),
-                        saved.getAmount(),
-                        saved.getFee(),
-                        saved.getSourceAccountId(),
-                        saved.getTargetAccountId(),
-                        clock.instant()));
+                    Transaction saved = transactionRepository.save(transaction);
+                    eventPublisher.publishEvent(
+                            new TransactionCompletedEvent(
+                                    saved.getId(),
+                                    saved.getReferenceNo(),
+                                    saved.getType(),
+                                    saved.getAmount(),
+                                    saved.getFee(),
+                                    saved.getSourceAccountId(),
+                                    saved.getTargetAccountId(),
+                                    clock.instant()));
 
-        log.info(
-                "Transfer completed [txnId={}, ref={}, from={}, to={}, amount={}, fee={}]",
-                saved.getId(),
-                saved.getReferenceNo(),
-                source.getId(),
-                target.getId(),
-                saved.getAmount(),
-                saved.getFee());
+                    log.info(
+                            "Transfer completed [txnId={}, ref={}, from={}, to={}, amount={},"
+                                    + " fee={}]",
+                            saved.getId(),
+                            saved.getReferenceNo(),
+                            source.getId(),
+                            target.getId(),
+                            saved.getAmount(),
+                            saved.getFee());
 
-        return TransactionResponse.from(saved);
+                    return TransactionResponse.from(saved);
+                });
     }
 
     /**
@@ -421,71 +480,75 @@ public class TransactionService {
     }
 
     private TransactionResponse executePayment(PaymentRequest request) {
-        Account account =
-                accountRepository
-                        .findByIdForUpdate(request.sourceAccountId())
-                        .orElseThrow(
-                                () ->
-                                        new ResourceNotFoundException(
-                                                "Account", request.sourceAccountId()));
+        return recordTransactionTimer(
+                TransactionType.PAYMENT,
+                () -> {
+                    Account account =
+                            accountRepository
+                                    .findByIdForUpdate(request.sourceAccountId())
+                                    .orElseThrow(
+                                            () ->
+                                                    new ResourceNotFoundException(
+                                                            "Account", request.sourceAccountId()));
 
-        Money amount = Money.of(request.amount());
-        BigDecimal dailySpent =
-                transactionRepository.sumOutgoingAmountSince(
-                        account.getId(), TransactionStatus.COMPLETED, getStartOfDay());
-        limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
+                    Money amount = Money.of(request.amount());
+                    BigDecimal dailySpent =
+                            transactionRepository.sumOutgoingAmountSince(
+                                    account.getId(), TransactionStatus.COMPLETED, getStartOfDay());
+                    limitPolicy.validateLimits(account, amount, Money.of(dailySpent));
 
-        Money fee = feePolicy.calculateFee(TransactionType.PAYMENT, amount);
-        Money totalDebit = amount.plus(fee);
-        account.debit(totalDebit);
+                    Money fee = feePolicy.calculateFee(TransactionType.PAYMENT, amount);
+                    Money totalDebit = amount.plus(fee);
+                    account.debit(totalDebit);
 
-        String referenceNo = referenceGenerator.generate();
-        String description = request.description();
-        if (request.recipientInfo() != null && !request.recipientInfo().isBlank()) {
-            description =
-                    (description != null ? description + " | " : "")
-                            + request.recipientInfo().trim();
-        }
-        if (description != null && description.length() > 500) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED,
-                    "Combined payment description and recipientInfo must not exceed 500"
-                            + " characters");
-        }
+                    String referenceNo = referenceGenerator.generate();
+                    String description = request.description();
+                    if (request.recipientInfo() != null && !request.recipientInfo().isBlank()) {
+                        description =
+                                (description != null ? description + " | " : "")
+                                        + request.recipientInfo().trim();
+                    }
+                    if (description != null && description.length() > 500) {
+                        throw new BusinessRuleException(
+                                ErrorCode.VALIDATION_FAILED,
+                                "Combined payment description and recipientInfo must not exceed 500"
+                                        + " characters");
+                    }
 
-        Transaction transaction =
-                Transaction.createPayment(
-                        referenceNo,
-                        account.getId(),
-                        amount.getAmount(),
-                        fee.getAmount(),
-                        account.getBalance(),
-                        request.location(),
-                        description);
+                    Transaction transaction =
+                            Transaction.createPayment(
+                                    referenceNo,
+                                    account.getId(),
+                                    amount.getAmount(),
+                                    fee.getAmount(),
+                                    account.getBalance(),
+                                    request.location(),
+                                    description);
 
-        Transaction saved = transactionRepository.save(transaction);
-        eventPublisher.publishEvent(
-                new TransactionCompletedEvent(
-                        saved.getId(),
-                        saved.getReferenceNo(),
-                        saved.getType(),
-                        saved.getAmount(),
-                        saved.getFee(),
-                        saved.getSourceAccountId(),
-                        saved.getTargetAccountId(),
-                        clock.instant()));
+                    Transaction saved = transactionRepository.save(transaction);
+                    eventPublisher.publishEvent(
+                            new TransactionCompletedEvent(
+                                    saved.getId(),
+                                    saved.getReferenceNo(),
+                                    saved.getType(),
+                                    saved.getAmount(),
+                                    saved.getFee(),
+                                    saved.getSourceAccountId(),
+                                    saved.getTargetAccountId(),
+                                    clock.instant()));
 
-        log.info(
-                "Payment completed [txnId={}, ref={}, accountId={}, amount={}, fee={},"
-                        + " balanceAfter={}]",
-                saved.getId(),
-                saved.getReferenceNo(),
-                account.getId(),
-                saved.getAmount(),
-                saved.getFee(),
-                saved.getSourceBalanceAfter());
+                    log.info(
+                            "Payment completed [txnId={}, ref={}, accountId={}, amount={}, fee={},"
+                                    + " balanceAfter={}]",
+                            saved.getId(),
+                            saved.getReferenceNo(),
+                            account.getId(),
+                            saved.getAmount(),
+                            saved.getFee(),
+                            saved.getSourceBalanceAfter());
 
-        return TransactionResponse.from(saved);
+                    return TransactionResponse.from(saved);
+                });
     }
 
     /**
@@ -531,146 +594,170 @@ public class TransactionService {
      */
     @Transactional
     public TransactionResponse reverseTransaction(Long id) {
-        Transaction original =
-                transactionRepository
-                        .findByIdForUpdate(id)
-                        .orElseThrow(() -> new ResourceNotFoundException("Transaction", id));
+        return recordTransactionTimer(
+                TransactionType.REVERSAL,
+                () -> {
+                    Transaction original =
+                            transactionRepository
+                                    .findByIdForUpdate(id)
+                                    .orElseThrow(
+                                            () -> new ResourceNotFoundException("Transaction", id));
 
-        if (original.getStatus() == TransactionStatus.REVERSED
-                || transactionRepository.existsByReversalOfId(id)) {
-            throw new BusinessRuleException(
-                    ErrorCode.ALREADY_REVERSED, "Transaction " + id + " has already been reversed");
-        }
+                    if (original.getStatus() == TransactionStatus.REVERSED
+                            || transactionRepository.existsByReversalOfId(id)) {
+                        throw new BusinessRuleException(
+                                ErrorCode.ALREADY_REVERSED,
+                                "Transaction " + id + " has already been reversed");
+                    }
 
-        if (original.getType() == TransactionType.REVERSAL) {
-            throw new BusinessRuleException(
-                    ErrorCode.INVALID_STATUS_TRANSITION, "Cannot reverse a reversal transaction");
-        }
+                    if (original.getType() == TransactionType.REVERSAL) {
+                        throw new BusinessRuleException(
+                                ErrorCode.INVALID_STATUS_TRANSITION,
+                                "Cannot reverse a reversal transaction");
+                    }
 
-        Transaction reversal;
-        String referenceNo = referenceGenerator.generate();
+                    Transaction reversal;
+                    String referenceNo = referenceGenerator.generate();
 
-        switch (original.getType()) {
-            case DEPOSIT -> {
-                Account target =
-                        accountRepository
-                                .findByIdForUpdate(original.getTargetAccountId())
-                                .orElseThrow(
-                                        () ->
-                                                new ResourceNotFoundException(
-                                                        "Account", original.getTargetAccountId()));
+                    switch (original.getType()) {
+                        case DEPOSIT -> {
+                            Account target =
+                                    accountRepository
+                                            .findByIdForUpdate(original.getTargetAccountId())
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account",
+                                                                    original.getTargetAccountId()));
 
-                target.debit(Money.of(original.getAmount()));
-                original.markReversed();
+                            target.debit(Money.of(original.getAmount()));
+                            original.markReversed();
 
-                reversal =
-                        Transaction.createDepositReversal(
-                                referenceNo, original, target.getBalance(), null, null);
-            }
-            case WITHDRAWAL -> {
-                Account source =
-                        accountRepository
-                                .findByIdForUpdate(original.getSourceAccountId())
-                                .orElseThrow(
-                                        () ->
-                                                new ResourceNotFoundException(
-                                                        "Account", original.getSourceAccountId()));
+                            reversal =
+                                    Transaction.createDepositReversal(
+                                            referenceNo, original, target.getBalance(), null, null);
+                        }
+                        case WITHDRAWAL -> {
+                            Account source =
+                                    accountRepository
+                                            .findByIdForUpdate(original.getSourceAccountId())
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account",
+                                                                    original.getSourceAccountId()));
 
-                Money refundTotal =
-                        Money.of(original.getAmount()).plus(Money.of(original.getFee()));
-                source.credit(refundTotal);
-                original.markReversed();
+                            Money refundTotal =
+                                    Money.of(original.getAmount())
+                                            .plus(Money.of(original.getFee()));
+                            source.credit(refundTotal);
+                            original.markReversed();
 
-                reversal =
-                        Transaction.createWithdrawalReversal(
-                                referenceNo, original, source.getBalance(), null, null);
-            }
-            case PAYMENT -> {
-                Account source =
-                        accountRepository
-                                .findByIdForUpdate(original.getSourceAccountId())
-                                .orElseThrow(
-                                        () ->
-                                                new ResourceNotFoundException(
-                                                        "Account", original.getSourceAccountId()));
+                            reversal =
+                                    Transaction.createWithdrawalReversal(
+                                            referenceNo, original, source.getBalance(), null, null);
+                        }
+                        case PAYMENT -> {
+                            Account source =
+                                    accountRepository
+                                            .findByIdForUpdate(original.getSourceAccountId())
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account",
+                                                                    original.getSourceAccountId()));
 
-                Money refundTotal =
-                        Money.of(original.getAmount()).plus(Money.of(original.getFee()));
-                source.credit(refundTotal);
-                original.markReversed();
+                            Money refundTotal =
+                                    Money.of(original.getAmount())
+                                            .plus(Money.of(original.getFee()));
+                            source.credit(refundTotal);
+                            original.markReversed();
 
-                reversal =
-                        Transaction.createPaymentReversal(
-                                referenceNo, original, source.getBalance(), null, null);
-            }
-            case TRANSFER -> {
-                Long firstId =
-                        Math.min(original.getSourceAccountId(), original.getTargetAccountId());
-                Long secondId =
-                        Math.max(original.getSourceAccountId(), original.getTargetAccountId());
+                            reversal =
+                                    Transaction.createPaymentReversal(
+                                            referenceNo, original, source.getBalance(), null, null);
+                        }
+                        case TRANSFER -> {
+                            Long firstId =
+                                    Math.min(
+                                            original.getSourceAccountId(),
+                                            original.getTargetAccountId());
+                            Long secondId =
+                                    Math.max(
+                                            original.getSourceAccountId(),
+                                            original.getTargetAccountId());
 
-                Account firstAccount =
-                        accountRepository
-                                .findByIdForUpdate(firstId)
-                                .orElseThrow(
-                                        () -> new ResourceNotFoundException("Account", firstId));
-                Account secondAccount =
-                        accountRepository
-                                .findByIdForUpdate(secondId)
-                                .orElseThrow(
-                                        () -> new ResourceNotFoundException("Account", secondId));
+                            Account firstAccount =
+                                    accountRepository
+                                            .findByIdForUpdate(firstId)
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account", firstId));
+                            Account secondAccount =
+                                    accountRepository
+                                            .findByIdForUpdate(secondId)
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account", secondId));
 
-                Account sourceA =
-                        original.getSourceAccountId().equals(firstId)
-                                ? firstAccount
-                                : secondAccount;
-                Account targetB =
-                        original.getTargetAccountId().equals(firstId)
-                                ? firstAccount
-                                : secondAccount;
+                            Account sourceA =
+                                    original.getSourceAccountId().equals(firstId)
+                                            ? firstAccount
+                                            : secondAccount;
+                            Account targetB =
+                                    original.getTargetAccountId().equals(firstId)
+                                            ? firstAccount
+                                            : secondAccount;
 
-                targetB.debit(Money.of(original.getAmount()));
-                Money refundA = Money.of(original.getAmount()).plus(Money.of(original.getFee()));
-                sourceA.credit(refundA);
+                            targetB.debit(Money.of(original.getAmount()));
+                            Money refundA =
+                                    Money.of(original.getAmount())
+                                            .plus(Money.of(original.getFee()));
+                            sourceA.credit(refundA);
 
-                original.markReversed();
+                            original.markReversed();
 
-                reversal =
-                        Transaction.createTransferReversal(
-                                referenceNo,
-                                original,
-                                targetB.getBalance(),
-                                sourceA.getBalance(),
-                                null,
-                                null);
-            }
-            default ->
-                    throw new BusinessRuleException(
-                            ErrorCode.INVALID_STATUS_TRANSITION,
-                            "Unsupported transaction type for reversal: " + original.getType());
-        }
+                            reversal =
+                                    Transaction.createTransferReversal(
+                                            referenceNo,
+                                            original,
+                                            targetB.getBalance(),
+                                            sourceA.getBalance(),
+                                            null,
+                                            null);
+                        }
+                        default ->
+                                throw new BusinessRuleException(
+                                        ErrorCode.INVALID_STATUS_TRANSITION,
+                                        "Unsupported transaction type for reversal: "
+                                                + original.getType());
+                    }
 
-        transactionRepository.saveAndFlush(original);
-        Transaction savedReversal = transactionRepository.save(reversal);
+                    transactionRepository.saveAndFlush(original);
+                    Transaction savedReversal = transactionRepository.save(reversal);
 
-        eventPublisher.publishEvent(
-                new TransactionCompletedEvent(
-                        savedReversal.getId(),
-                        savedReversal.getReferenceNo(),
-                        savedReversal.getType(),
-                        savedReversal.getAmount(),
-                        savedReversal.getFee(),
-                        savedReversal.getSourceAccountId(),
-                        savedReversal.getTargetAccountId(),
-                        clock.instant()));
+                    eventPublisher.publishEvent(
+                            new TransactionCompletedEvent(
+                                    savedReversal.getId(),
+                                    savedReversal.getReferenceNo(),
+                                    savedReversal.getType(),
+                                    savedReversal.getAmount(),
+                                    savedReversal.getFee(),
+                                    savedReversal.getSourceAccountId(),
+                                    savedReversal.getTargetAccountId(),
+                                    clock.instant()));
 
-        log.info(
-                "Transaction reversed successfully [originalId={}, reversalId={}, ref={}]",
-                original.getId(),
-                savedReversal.getId(),
-                savedReversal.getReferenceNo());
+                    log.info(
+                            "Transaction reversed successfully [originalId={}, reversalId={},"
+                                    + " ref={}]",
+                            original.getId(),
+                            savedReversal.getId(),
+                            savedReversal.getReferenceNo());
 
-        return TransactionResponse.from(savedReversal);
+                    return TransactionResponse.from(savedReversal);
+                });
     }
 
     private Instant getStartOfDay() {
@@ -960,159 +1047,198 @@ public class TransactionService {
             BigDecimal amount,
             String location,
             String description) {
-        if (transactionRepository.findByReferenceNo(referenceNo).isPresent()) {
-            throw new BusinessRuleException(
-                    ErrorCode.DUPLICATE_RESOURCE,
-                    "Scheduled transaction already executed for period reference: " + referenceNo);
+        return recordTransactionTimer(
+                type,
+                () -> {
+                    if (transactionRepository.findByReferenceNo(referenceNo).isPresent()) {
+                        throw new BusinessRuleException(
+                                ErrorCode.DUPLICATE_RESOURCE,
+                                "Scheduled transaction already executed for period reference: "
+                                        + referenceNo);
+                    }
+                    Money amountMoney = Money.of(amount);
+                    Transaction transaction;
+
+                    switch (type) {
+                        case DEPOSIT -> {
+                            Account target =
+                                    accountRepository
+                                            .findByIdForUpdate(targetAccountId)
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account", targetAccountId));
+                            target.credit(amountMoney);
+                            transaction =
+                                    Transaction.createDeposit(
+                                            referenceNo,
+                                            target.getId(),
+                                            amountMoney.getAmount(),
+                                            target.getBalance(),
+                                            location,
+                                            description,
+                                            recurringId,
+                                            "SYSTEM");
+                        }
+                        case PAYMENT -> {
+                            Account source =
+                                    accountRepository
+                                            .findByIdForUpdate(sourceAccountId)
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account", sourceAccountId));
+                            BigDecimal dailySpent =
+                                    transactionRepository.sumOutgoingAmountSince(
+                                            source.getId(),
+                                            TransactionStatus.COMPLETED,
+                                            getStartOfDay());
+                            limitPolicy.validateLimits(source, amountMoney, Money.of(dailySpent));
+
+                            Money fee =
+                                    feePolicy.calculateFee(TransactionType.PAYMENT, amountMoney);
+                            Money totalDebit = amountMoney.plus(fee);
+                            source.debit(totalDebit);
+
+                            transaction =
+                                    Transaction.createPayment(
+                                            referenceNo,
+                                            source.getId(),
+                                            amountMoney.getAmount(),
+                                            fee.getAmount(),
+                                            source.getBalance(),
+                                            location,
+                                            description,
+                                            recurringId,
+                                            "SYSTEM");
+                        }
+                        case TRANSFER -> {
+                            if (sourceAccountId.equals(targetAccountId)) {
+                                throw new BusinessRuleException(
+                                        ErrorCode.SAME_ACCOUNT_TRANSFER,
+                                        "Source and target accounts cannot be identical");
+                            }
+                            Long firstId = Math.min(sourceAccountId, targetAccountId);
+                            Long secondId = Math.max(sourceAccountId, targetAccountId);
+
+                            Account firstAccount =
+                                    accountRepository
+                                            .findByIdForUpdate(firstId)
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account", firstId));
+                            Account secondAccount =
+                                    accountRepository
+                                            .findByIdForUpdate(secondId)
+                                            .orElseThrow(
+                                                    () ->
+                                                            new ResourceNotFoundException(
+                                                                    "Account", secondId));
+
+                            Account source =
+                                    sourceAccountId.equals(firstId) ? firstAccount : secondAccount;
+                            Account target =
+                                    targetAccountId.equals(firstId) ? firstAccount : secondAccount;
+
+                            if (!source.isActive()) {
+                                throw new BusinessRuleException(
+                                        ErrorCode.ACCOUNT_NOT_ACTIVE,
+                                        "Account "
+                                                + source.getAccountNumber()
+                                                + " is not active (current status: "
+                                                + source.getStatus()
+                                                + ")");
+                            }
+                            if (!target.isActive()) {
+                                throw new BusinessRuleException(
+                                        ErrorCode.ACCOUNT_NOT_ACTIVE,
+                                        "Account "
+                                                + target.getAccountNumber()
+                                                + " is not active (current status: "
+                                                + target.getStatus()
+                                                + ")");
+                            }
+
+                            BigDecimal dailySpent =
+                                    transactionRepository.sumOutgoingAmountSince(
+                                            source.getId(),
+                                            TransactionStatus.COMPLETED,
+                                            getStartOfDay());
+                            limitPolicy.validateLimits(source, amountMoney, Money.of(dailySpent));
+
+                            Money fee =
+                                    feePolicy.calculateFee(TransactionType.TRANSFER, amountMoney);
+                            Money totalDebit = amountMoney.plus(fee);
+
+                            source.debit(totalDebit);
+                            target.credit(amountMoney);
+
+                            transaction =
+                                    Transaction.createTransfer(
+                                            referenceNo,
+                                            source.getId(),
+                                            target.getId(),
+                                            amountMoney.getAmount(),
+                                            fee.getAmount(),
+                                            source.getBalance(),
+                                            target.getBalance(),
+                                            location,
+                                            description,
+                                            recurringId,
+                                            "SYSTEM");
+                        }
+                        default ->
+                                throw new BusinessRuleException(
+                                        ErrorCode.VALIDATION_FAILED,
+                                        "Unsupported scheduled transaction type: " + type);
+                    }
+
+                    Transaction saved = transactionRepository.saveAndFlush(transaction);
+                    eventPublisher.publishEvent(
+                            new TransactionCompletedEvent(
+                                    saved.getId(),
+                                    saved.getReferenceNo(),
+                                    saved.getType(),
+                                    saved.getAmount(),
+                                    saved.getFee(),
+                                    saved.getSourceAccountId(),
+                                    saved.getTargetAccountId(),
+                                    clock.instant()));
+
+                    log.info(
+                            "Scheduled transaction completed [recurringId={}, txnId={}, ref={},"
+                                    + " type={}, amount={}, fee={}]",
+                            recurringId,
+                            saved.getId(),
+                            saved.getReferenceNo(),
+                            saved.getType(),
+                            saved.getAmount(),
+                            saved.getFee());
+
+                    return TransactionResponse.from(saved);
+                });
+    }
+
+    private <T> T recordTransactionTimer(TransactionType type, Supplier<T> action) {
+        if (meterRegistry == null) {
+            return action.get();
         }
-        Money amountMoney = Money.of(amount);
-        Transaction transaction;
-
-        switch (type) {
-            case DEPOSIT -> {
-                Account target =
-                        accountRepository
-                                .findByIdForUpdate(targetAccountId)
-                                .orElseThrow(
-                                        () ->
-                                                new ResourceNotFoundException(
-                                                        "Account", targetAccountId));
-                target.credit(amountMoney);
-                transaction =
-                        Transaction.createDeposit(
-                                referenceNo,
-                                target.getId(),
-                                amountMoney.getAmount(),
-                                target.getBalance(),
-                                location,
-                                description,
-                                recurringId,
-                                "SYSTEM");
-            }
-            case PAYMENT -> {
-                Account source =
-                        accountRepository
-                                .findByIdForUpdate(sourceAccountId)
-                                .orElseThrow(
-                                        () ->
-                                                new ResourceNotFoundException(
-                                                        "Account", sourceAccountId));
-                BigDecimal dailySpent =
-                        transactionRepository.sumOutgoingAmountSince(
-                                source.getId(), TransactionStatus.COMPLETED, getStartOfDay());
-                limitPolicy.validateLimits(source, amountMoney, Money.of(dailySpent));
-
-                Money fee = feePolicy.calculateFee(TransactionType.PAYMENT, amountMoney);
-                Money totalDebit = amountMoney.plus(fee);
-                source.debit(totalDebit);
-
-                transaction =
-                        Transaction.createPayment(
-                                referenceNo,
-                                source.getId(),
-                                amountMoney.getAmount(),
-                                fee.getAmount(),
-                                source.getBalance(),
-                                location,
-                                description,
-                                recurringId,
-                                "SYSTEM");
-            }
-            case TRANSFER -> {
-                if (sourceAccountId.equals(targetAccountId)) {
-                    throw new BusinessRuleException(
-                            ErrorCode.SAME_ACCOUNT_TRANSFER,
-                            "Source and target accounts cannot be identical");
-                }
-                Long firstId = Math.min(sourceAccountId, targetAccountId);
-                Long secondId = Math.max(sourceAccountId, targetAccountId);
-
-                Account firstAccount =
-                        accountRepository
-                                .findByIdForUpdate(firstId)
-                                .orElseThrow(
-                                        () -> new ResourceNotFoundException("Account", firstId));
-                Account secondAccount =
-                        accountRepository
-                                .findByIdForUpdate(secondId)
-                                .orElseThrow(
-                                        () -> new ResourceNotFoundException("Account", secondId));
-
-                Account source = sourceAccountId.equals(firstId) ? firstAccount : secondAccount;
-                Account target = targetAccountId.equals(firstId) ? firstAccount : secondAccount;
-
-                if (!source.isActive()) {
-                    throw new BusinessRuleException(
-                            ErrorCode.ACCOUNT_NOT_ACTIVE,
-                            "Account "
-                                    + source.getAccountNumber()
-                                    + " is not active (current status: "
-                                    + source.getStatus()
-                                    + ")");
-                }
-                if (!target.isActive()) {
-                    throw new BusinessRuleException(
-                            ErrorCode.ACCOUNT_NOT_ACTIVE,
-                            "Account "
-                                    + target.getAccountNumber()
-                                    + " is not active (current status: "
-                                    + target.getStatus()
-                                    + ")");
-                }
-
-                BigDecimal dailySpent =
-                        transactionRepository.sumOutgoingAmountSince(
-                                source.getId(), TransactionStatus.COMPLETED, getStartOfDay());
-                limitPolicy.validateLimits(source, amountMoney, Money.of(dailySpent));
-
-                Money fee = feePolicy.calculateFee(TransactionType.TRANSFER, amountMoney);
-                Money totalDebit = amountMoney.plus(fee);
-
-                source.debit(totalDebit);
-                target.credit(amountMoney);
-
-                transaction =
-                        Transaction.createTransfer(
-                                referenceNo,
-                                source.getId(),
-                                target.getId(),
-                                amountMoney.getAmount(),
-                                fee.getAmount(),
-                                source.getBalance(),
-                                target.getBalance(),
-                                location,
-                                description,
-                                recurringId,
-                                "SYSTEM");
-            }
-            default ->
-                    throw new BusinessRuleException(
-                            ErrorCode.VALIDATION_FAILED,
-                            "Unsupported scheduled transaction type: " + type);
+        Timer.Sample sample = Timer.start(meterRegistry);
+        String outcome = OUTCOME_SUCCESS;
+        try {
+            return action.get();
+        } catch (RuntimeException ex) {
+            outcome = OUTCOME_FAILURE;
+            throw ex;
+        } finally {
+            String typeTag = type != null ? type.name() : "UNKNOWN";
+            sample.stop(
+                    Timer.builder(TRANSACTIONS_METRIC)
+                            .description("Execution duration and outcome of banking transactions")
+                            .tag("type", typeTag)
+                            .tag("outcome", outcome)
+                            .register(meterRegistry));
         }
-
-        Transaction saved = transactionRepository.saveAndFlush(transaction);
-        eventPublisher.publishEvent(
-                new TransactionCompletedEvent(
-                        saved.getId(),
-                        saved.getReferenceNo(),
-                        saved.getType(),
-                        saved.getAmount(),
-                        saved.getFee(),
-                        saved.getSourceAccountId(),
-                        saved.getTargetAccountId(),
-                        clock.instant()));
-
-        log.info(
-                "Scheduled transaction completed [recurringId={}, txnId={}, ref={}, type={},"
-                        + " amount={}, fee={}]",
-                recurringId,
-                saved.getId(),
-                saved.getReferenceNo(),
-                saved.getType(),
-                saved.getAmount(),
-                saved.getFee());
-
-        return TransactionResponse.from(saved);
     }
 }
