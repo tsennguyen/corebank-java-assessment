@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Core Banking System — Operations Console</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --panel: #151f32;
+      --border: #263552;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      background: #0f172a;
+      border-bottom: 1px solid var(--border);
+      padding: 0.9rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .brand { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
+    .container { max-width: 1360px; margin: 0 auto; padding: 1.5rem 2rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.5rem; }
+    @media (max-width: 900px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+      header, .container { padding-left: 1rem; padding-right: 1rem; }
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+    }
+    .card h3 { font-size: 0.95rem; color: var(--muted); margin-bottom: 0.5rem; }
+    .kpi { font-size: 1.55rem; font-weight: 700; color: #fff; }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
+    input, select, button {
+      background: #0f172a;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.9rem;
+    }
+    button.btn-primary {
+      background: var(--primary);
+      color: #020617;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+    }
+    button.btn-outline { cursor: pointer; }
+    button.btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--primary); background: rgba(15, 23, 42, 0.6); }
+    .badge {
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 600;
+    }
+    .badge-ok { background: rgba(16, 185, 129, 0.18); color: var(--success); }
+    .badge-warn { background: rgba(245, 158, 11, 0.18); color: var(--warning); }
+    .badge-err { background: rgba(239, 68, 68, 0.18); color: var(--danger); }
+    #statusBanner {
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      display: none;
+      font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">Core Banking System — Operations Console (v1.0.0)</div>
+    <div class="row" style="margin-bottom: 0;">
+      <span id="authInfo" style="color: var(--muted); font-size: 0.88rem;">Chưa đăng nhập</span>
+      <input type="text" id="loginUser" placeholder="Username" value="admin" style="width: 110px;" />
+      <input type="password" id="loginPass" placeholder="Password" value="Admin@123" style="width: 120px;" />
+      <button class="btn-primary" onclick="customLogin()">Đăng nhập</button>
+      <button class="btn-outline" onclick="quickLogin('admin', 'Admin@123')">ADMIN (Local)</button>
+      <button class="btn-outline" onclick="quickLogin('cust.an', 'Customer@123')">cust.an</button>
+      <button class="btn-outline" onclick="quickLogin('cust.binh', 'Customer@123')">cust.binh</button>
+      <a href="/swagger-ui/index.html" target="_blank" style="color: var(--primary); text-decoration: none; font-size: 0.88rem; margin-left: 0.25rem;">Swagger UI ↗</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="statusBanner"></div>
+
+    <!-- KPI Row -->
+    <div class="grid-4">
+      <div class="card">
+        <h3>Tổng Tài khoản Hoạt động</h3>
+        <div class="kpi" id="kpiAccounts">—</div>
+      </div>
+      <div class="card">
+        <h3>Số dư Toàn Hệ thống (VND)</h3>
+        <div class="kpi" id="kpiTotalBalance">—</div>
+      </div>
+      <div class="card">
+        <h3>Tổng Giao dịch Hoàn tất</h3>
+        <div class="kpi" id="kpiTxCount">—</div>
+      </div>
+      <div class="card">
+        <h3>Trạng thái Hệ thống & Phiên</h3>
+        <div class="kpi" id="kpiRole" style="font-size: 1.15rem; color: var(--primary);">GUEST · UP</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Quick Transaction Card -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Thực hiện Giao dịch, Xem trước Phí & Idempotency-Key (L1-08 / NC-02)</h3>
+          <span id="feePreviewLabel" style="font-size: 0.85rem; color: var(--success);">Phí dự kiến: —</span>
+        </div>
+        <div class="row">
+          <select id="txType" onchange="previewFee()">
+            <option value="TRANSFER">Chuyển khoản (TRANSFER)</option>
+            <option value="DEPOSIT">Nạp tiền (DEPOSIT)</option>
+            <option value="WITHDRAWAL">Rút tiền (WITHDRAWAL)</option>
+            <option value="PAYMENT">Thanh toán (PAYMENT)</option>
+          </select>
+          <input type="number" id="srcAccId" placeholder="ID TK Nguồn (VD: 1)" value="1" style="width: 145px;" />
+          <input type="number" id="tgtAccId" placeholder="ID TK Đích (VD: 2)" value="2" style="width: 145px;" />
+          <button class="btn-outline" onclick="previewFee()">Xem trước Phí</button>
+        </div>
+        <div class="row">
+          <input type="number" id="txAmount" placeholder="Số tiền (VND)" value="250000" style="width: 160px;" oninput="previewFee()" />
+          <input type="text" id="txLocation" placeholder="Địa điểm" value="Hà Nội" style="width: 130px;" />
+          <input type="text" id="txDesc" placeholder="Nội dung giao dịch" value="Giao dịch trên Operations Console" style="flex: 1;" />
+        </div>
+        <div class="row" style="margin-bottom: 0;">
+          <input type="text" id="idemKey" placeholder="Idempotency-Key" style="flex: 1;" />
+          <button class="btn-outline" onclick="regenIdemKey()">Đổi Key mới</button>
+          <button class="btn-primary" onclick="submitTransaction()">Gửi / Gửi lại cùng Idempotency-Key</button>
+        </div>
+      </div>
+
+      <!-- Balance Tiers, Accounts & Report Export Card -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Nhóm Số dư (L1-09), Kỳ Báo cáo (L3-01) & Xuất File (L3-07)</h3>
+          <div class="row" style="margin-bottom: 0;">
+            <button class="btn-outline" onclick="loadDashboardData()">Làm mới</button>
+            <button class="btn-outline" onclick="exportFile('XLSX')">Tải Excel (.xlsx)</button>
+            <button class="btn-outline" onclick="exportFile('PDF')">Tải PDF (.pdf)</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Nhóm số dư (Tier)</th>
+              <th>Số lượng TK</th>
+              <th>Số giao dịch</th>
+            </tr>
+          </thead>
+          <tbody id="tierTableBody">
+            <tr><td colspan="3" style="color: var(--muted);">Đăng nhập ADMIN để xem thống kê toàn hệ thống...</td></tr>
+          </tbody>
+        </table>
+        <div id="periodicSummaryBox" style="margin-top: 0.65rem; font-size: 0.84rem; color: var(--muted);">
+          Báo cáo định kỳ Quý (QUARTER): —
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <!-- Alerts & Fraud Scan Card -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Cảnh báo Giao dịch Bất thường (L3-03 / L3-04)</h3>
+          <div class="row" style="margin-bottom: 0;">
+            <button class="btn-outline" onclick="loadAlerts()">Tải Alerts</button>
+            <button class="btn-outline" onclick="runHistoricalFraudScan()">Quét Lịch sử (Window SQL)</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>TK / GD</th>
+              <th>Quy tắc & Mức độ</th>
+              <th>Trạng thái</th>
+              <th>Thao tác FSM</th>
+            </tr>
+          </thead>
+          <tbody id="alertTableBody">
+            <tr><td colspan="5" style="color: var(--muted);">Đăng nhập ADMIN để quản lý cảnh báo...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Trend Series & Location Statistics Card -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Xu hướng Dòng tiền & Phân bố Địa lý (L3-08 / L1-10)</h3>
+          <span id="locationSummary" style="color: var(--muted); font-size: 0.85rem;">—</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Kỳ (Bucket)</th>
+              <th>Số GD</th>
+              <th>Tổng tiền (VND)</th>
+              <th>Tổng phí (VND)</th>
+              <th>Số dư cuối kỳ (VND)</th>
+            </tr>
+          </thead>
+          <tbody id="trendTableBody">
+            <tr><td colspan="5" style="color: var(--muted);">Đăng nhập ADMIN để xem chuỗi xu hướng...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Accounts & Multi-Filter Transactions Table -->
+    <div class="card" style="margin-bottom: 1.5rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+        <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Danh sách Tài khoản & Tìm kiếm Giao dịch Đa bộ lọc (L1-06 / L2-03 / L2-04)</h3>
+        <span id="accountsSummary" style="color: var(--muted); font-size: 0.85rem;">Tài khoản: —</span>
+      </div>
+      <div class="row">
+        <input type="number" id="lookupAccId" placeholder="Account ID (VD: 1)" value="1" style="width: 130px;" />
+        <select id="filterTxType">
+          <option value="">Tất cả loại GD</option>
+          <option value="DEPOSIT">DEPOSIT</option>
+          <option value="WITHDRAWAL">WITHDRAWAL</option>
+          <option value="TRANSFER">TRANSFER</option>
+          <option value="PAYMENT">PAYMENT</option>
+          <option value="REVERSAL">REVERSAL</option>
+        </select>
+        <select id="filterTxStatus">
+          <option value="">Tất cả trạng thái</option>
+          <option value="COMPLETED">COMPLETED</option>
+          <option value="REVERSED">REVERSED</option>
+          <option value="FAILED">FAILED</option>
+        </select>
+        <input type="number" id="filterMinAmount" placeholder="Số tiền từ (VND)" style="width: 145px;" />
+        <input type="number" id="filterMaxAmount" placeholder="Số tiền đến (VND)" style="width: 145px;" />
+        <input type="date" id="filterFromDate" title="Từ ngày" />
+        <input type="date" id="filterToDate" title="Đến ngày" />
+        <button class="btn-outline" onclick="loadAccountTransactions()">Tra cứu</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Mã tham chiếu (Reference)</th>
+            <th>Loại</th>
+            <th>TK Nguồn &rarr; Đích</th>
+            <th>Số tiền (VND)</th>
+            <th>Phí (VND)</th>
+            <th>Trạng thái</th>
+            <th>Thời gian</th>
+          </tr>
+        </thead>
+        <tbody id="txTableBody">
+          <tr><td colspan="8" style="color: var(--muted);">Hãy bấm đăng nhập ở góc phải phía trên để tải dữ liệu...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

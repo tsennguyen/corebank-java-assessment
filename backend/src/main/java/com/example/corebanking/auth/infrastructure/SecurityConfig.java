@@ -117,6 +117,10 @@ public class SecurityConfig {
                                                 "/api/v1/auth/refresh")
                                         .permitAll()
                                         .requestMatchers(
+                                                "/",
+                                                "/index.html",
+                                                "/app.js",
+                                                "/favicon.ico",
                                                 "/actuator/health",
                                                 "/actuator/health/**",
                                                 "/actuator/info",
