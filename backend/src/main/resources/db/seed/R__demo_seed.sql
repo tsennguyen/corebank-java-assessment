@@ -52,8 +52,8 @@ FROM (
         ('100800000075', 'CUS8000009', 65000000.00::numeric(19,2), 50000000.00::numeric(19,2), 200000000.00::numeric(19,2), (CURRENT_DATE - 200), (CURRENT_TIMESTAMP - INTERVAL '200 days')),
         ('100800000083', 'CUS8000014', 15000000.00::numeric(19,2), 50000000.00::numeric(19,2), 200000000.00::numeric(19,2), (CURRENT_DATE - 140), (CURRENT_TIMESTAMP - INTERVAL '140 days')),
         -- HIGH tier accounts (>= 100,000,000 VND)
-        ('100800000091', 'CUS8000007', 386996000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 250), (CURRENT_TIMESTAMP - INTERVAL '250 days')),
-        ('100800000109', 'CUS8000013', 534997000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 160), (CURRENT_TIMESTAMP - INTERVAL '160 days')),
+        ('100800000091', 'CUS8000007', 455984000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 250), (CURRENT_TIMESTAMP - INTERVAL '250 days')),
+        ('100800000109', 'CUS8000013', 465987000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 160), (CURRENT_TIMESTAMP - INTERVAL '160 days')),
         ('100800000117', 'CUS8000017', 125000000.00::numeric(19,2), 100000000.00::numeric(19,2), 500000000.00::numeric(19,2), (CURRENT_DATE - 90), (CURRENT_TIMESTAMP - INTERVAL '90 days')),
         ('100800000125', 'CUS8000019', 180000000.00::numeric(19,2), 100000000.00::numeric(19,2), 500000000.00::numeric(19,2), (CURRENT_DATE - 45), (CURRENT_TIMESTAMP - INTERVAL '45 days'))
 ) AS v(acc_num, cust_code, balance, tx_limit, daily_limit, opened_date, created_at)
@@ -96,7 +96,16 @@ FROM (
         ('TXN-SEED-0013', 'TRANSFER', '100800000109', '100800000083', 15000000.00::numeric(19,2), 3000.00::numeric(19,2), 534997000.00::numeric(19,2), 15000000.00::numeric(19,2), -3000.00::numeric(19,2), 'Đà Nẵng', 'Tạm ứng hợp đồng dịch vụ', CURRENT_TIMESTAMP - INTERVAL '60 days'),
         ('TXN-SEED-0014', 'PAYMENT', '100800000059', NULL, 5000000.00::numeric(19,2), 0.00::numeric(19,2), 25000000.00::numeric(19,2), NULL::numeric(19,2), -5000000.00::numeric(19,2), 'Hà Nội', 'Thanh toán cước viễn thông', CURRENT_TIMESTAMP - INTERVAL '30 days'),
         ('TXN-SEED-0015', 'WITHDRAWAL', '100800000067', NULL, 1998000.00::numeric(19,2), 2000.00::numeric(19,2), 48000000.00::numeric(19,2), NULL::numeric(19,2), -2000000.00::numeric(19,2), 'Hồ Chí Minh', 'Rút tiền chi tiêu cá nhân', CURRENT_TIMESTAMP - INTERVAL '15 days'),
-        ('TXN-SEED-0016', 'DEPOSIT', NULL, '100800000125', 180000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 180000000.00::numeric(19,2), 180000000.00::numeric(19,2), 'Cần Thơ', 'Nạp tiền gửi kỳ hạn linh hoạt', CURRENT_TIMESTAMP - INTERVAL '5 days')
+        ('TXN-SEED-0016', 'DEPOSIT', NULL, '100800000125', 180000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 180000000.00::numeric(19,2), 180000000.00::numeric(19,2), 'Cần Thơ', 'Nạp tiền gửi kỳ hạn linh hoạt', CURRENT_TIMESTAMP - INTERVAL '5 days'),
+        -- High-value outgoing transfer (>= 50,000,000 VND) triggering AMOUNT_THRESHOLD alert (L3-03, L3-04, Story 5.6)
+        ('TXN-SEED-0017', 'TRANSFER', '100800000109', '100800000091', 75000000.00::numeric(19,2), 10000.00::numeric(19,2), 459987000.00::numeric(19,2), 461996000.00::numeric(19,2), -10000.00::numeric(19,2), 'Hồ Chí Minh', 'Thanh toán lô thiết bị công nghiệp giá trị lớn', CURRENT_TIMESTAMP - INTERVAL '3 days'),
+        -- Rapid velocity burst (6 outgoing transfers within 30 seconds) triggering VELOCITY alert (L3-03, L3-04, Story 5.6)
+        ('TXN-SEED-0018', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 460994000.00::numeric(19,2), 460987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #1', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '5 seconds'),
+        ('TXN-SEED-0019', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 459992000.00::numeric(19,2), 461987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #2', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '10 seconds'),
+        ('TXN-SEED-0020', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 458990000.00::numeric(19,2), 462987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #3', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '15 seconds'),
+        ('TXN-SEED-0021', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 457988000.00::numeric(19,2), 463987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #4', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '20 seconds'),
+        ('TXN-SEED-0022', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 456986000.00::numeric(19,2), 464987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #5', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '25 seconds'),
+        ('TXN-SEED-0023', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 455984000.00::numeric(19,2), 465987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #6', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 seconds')
 ) AS v(ref_no, tx_type, src_acc_num, tgt_acc_num, amount, fee, src_bal_after, tgt_bal_after, sys_delta, location, description, created_at)
 LEFT JOIN core.account src ON src.account_number = v.src_acc_num
 LEFT JOIN core.account tgt ON tgt.account_number = v.tgt_acc_num
@@ -144,3 +153,18 @@ FROM (
 ) AS v(username, password_hash, cust_code, created_at)
 JOIN core.customer c ON c.customer_code = v.cust_code
 ON CONFLICT (username) DO NOTHING;
+
+-- 6. Seed synthetic anomaly alerts for TXN-SEED-0017 (AMOUNT_THRESHOLD) and TXN-SEED-0023 (VELOCITY)
+-- so GET /api/v1/alerts is immediately populated on fresh demo startup (L3-03, L3-04, Story 5.6)
+INSERT INTO core.alert (
+    transaction_id, account_id, rule_code, severity, reason, status, created_at
+)
+SELECT t.id, t.source_account_id, v.rule_code, v.severity, v.reason, 'NEW', t.created_at
+FROM (
+    VALUES
+        ('TXN-SEED-0017', 'AMOUNT_THRESHOLD', 'HIGH', 'Outgoing transaction amount 75000000.00 VND meets or exceeds threshold 50000000.00 VND'),
+        ('TXN-SEED-0023', 'VELOCITY', 'MEDIUM', 'Account exceeded velocity threshold: 6 outgoing transactions within 60 seconds (max 5)')
+) AS v(ref_no, rule_code, severity, reason)
+JOIN core.transaction t ON t.reference_no = v.ref_no
+WHERE t.source_account_id IS NOT NULL
+ON CONFLICT (transaction_id, rule_code) DO NOTHING;
