@@ -6,101 +6,365 @@
   <title>Core Banking System — Operations Console</title>
   <style>
     :root {
-      --bg: #0b1120;
-      --panel: #151f32;
-      --border: #263552;
-      --text: #f1f5f9;
-      --muted: #94a3b8;
-      --primary: #38bdf8;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --danger: #ef4444;
+      --bg: #f7f2ea;
+      --panel: #fffdf9;
+      --surface: #f1eae0;
+      --border: #e4d9c9;
+      --text: #1d1a17;
+      --muted: #6b6259;
+      --primary: #9b2c1f;
+      --gold: #b58a3a;
+      --success: #1b6e44;
+      --warning: #b45309;
+      --danger: #b91c1c;
+      --code-bg: #1c1816;
+      --code-fg: #f1e9dd;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141110;
+        --panel: #1c1816;
+        --surface: #25201d;
+        --border: #332c27;
+        --text: #f1e9dd;
+        --muted: #a99e90;
+        --primary: #d0563f;
+        --gold: #d4a85a;
+        --success: #34d399;
+        --warning: #fbbf24;
+        --danger: #f87171;
+        --code-bg: #0e0c0b;
+        --code-fg: #f1e9dd;
+      }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font: 15px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      overflow-x: hidden;
     }
     header {
-      background: #0f172a;
+      background: var(--panel);
       border-bottom: 1px solid var(--border);
-      padding: 0.9rem 2rem;
+      padding: 0.9rem 1.75rem;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+    .header-top {
+      max-width: 1380px;
+      margin: 0 auto;
       display: flex;
       align-items: center;
       justify-content: space-between;
       flex-wrap: wrap;
       gap: 0.75rem;
     }
-    .brand { font-size: 1.2rem; font-weight: 700; color: var(--primary); }
-    .container { max-width: 1360px; margin: 0 auto; padding: 1.5rem 2rem; }
-    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.5rem; }
-    @media (max-width: 900px) {
+    .brand-wrap { display: flex; flex-direction: column; gap: 0.1rem; }
+    .brand {
+      font: 600 1.3rem/1.2 Georgia, "Times New Roman", serif;
+      color: var(--text);
+    }
+    .brand-sub { font-size: 0.78rem; color: var(--muted); }
+    .nav-tabs {
+      display: inline-flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+      background: var(--surface);
+      padding: 0.25rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+    .nav-tab {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 0.4rem 0.85rem;
+      border-radius: 999px;
+      font-size: 0.84rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+    }
+    .nav-tab.active {
+      background: var(--primary);
+      color: #fff;
+    }
+    .auth-bar {
+      max-width: 1380px;
+      margin: 0.65rem auto 0;
+      padding-top: 0.65rem;
+      border-top: 1px dashed var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+    }
+    .auth-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.86rem;
+      font-weight: 600;
+    }
+    .dot-up {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--success);
+      display: inline-block;
+    }
+    .container { max-width: 1380px; margin: 0 auto; padding: 1.35rem 1.75rem 3.5rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; margin-bottom: 1.25rem; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; margin-bottom: 1.25rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.85rem; margin-bottom: 0.85rem; }
+    @media (max-width: 960px) {
       .grid-4 { grid-template-columns: repeat(2, 1fr); }
-      .grid-2 { grid-template-columns: 1fr; }
-      header, .container { padding-left: 1rem; padding-right: 1rem; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      header { position: static; padding: 0.75rem 1rem; }
+      .container { padding-left: 0.9rem; padding-right: 0.9rem; }
+      button, .btn-link, .nav-tab { white-space: normal; text-align: left; }
+      code { word-break: break-word; }
+    }
+    @media (max-width: 520px) {
+      .grid-4 { grid-template-columns: 1fr; }
     }
     .card {
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 1.25rem;
+      padding: 1.15rem 1.25rem;
+      min-width: 0;
     }
-    .card h3 { font-size: 0.95rem; color: var(--muted); margin-bottom: 0.5rem; }
-    .kpi { font-size: 1.55rem; font-weight: 700; color: #fff; }
-    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
-    input, select, button {
-      background: #0f172a;
+    .section-eyebrow {
+      font-size: 0.73rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--gold);
+      font-weight: 700;
+      margin-bottom: 0.2rem;
+    }
+    .card h3 {
+      font: 600 1.05rem/1.3 Georgia, "Times New Roman", serif;
+      color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+    .kpi-card { padding: 0.95rem 1.1rem; }
+    .kpi-card h3 {
+      font: 600 0.75rem/1.3 system-ui, -apple-system, sans-serif;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--gold);
+      margin-bottom: 0.3rem;
+    }
+    .kpi {
+      font: 700 1.38rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text);
+    }
+    .row { display: flex; gap: 0.55rem; flex-wrap: wrap; align-items: center; }
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      flex: 1;
+      min-width: 140px;
+    }
+    .field label {
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    input, select {
+      background: var(--surface);
       color: var(--text);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 0.55rem 0.85rem;
-      font-size: 0.9rem;
+      padding: 0.48rem 0.7rem;
+      font-size: 0.87rem;
+      width: 100%;
     }
-    button.btn-primary {
-      background: var(--primary);
-      color: #020617;
-      font-weight: 700;
-      border: none;
-      cursor: pointer;
+    input:focus, select:focus {
+      outline: 2px solid var(--gold);
+      outline-offset: 1px;
     }
-    button.btn-outline { cursor: pointer; }
-    button.btn-outline:hover { border-color: var(--primary); color: var(--primary); }
-    table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.88rem; }
-    th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border); }
-    th { color: var(--primary); background: rgba(15, 23, 42, 0.6); }
-    .badge {
-      padding: 0.2rem 0.55rem;
+    button, .btn-link {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
       border-radius: 999px;
-      font-size: 0.76rem;
+      padding: 0.45rem 0.9rem;
+      font-size: 0.84rem;
       font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+      transition: border-color 0.15s, background 0.15s;
     }
-    .badge-ok { background: rgba(16, 185, 129, 0.18); color: var(--success); }
-    .badge-warn { background: rgba(245, 158, 11, 0.18); color: var(--warning); }
-    .badge-err { background: rgba(239, 68, 68, 0.18); color: var(--danger); }
+    button.btn-primary, .btn-link.btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    button.btn-outline:hover, .btn-link:hover {
+      border-color: var(--gold);
+      color: var(--primary);
+    }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.35rem; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.52rem 0.65rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    th {
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      background: var(--surface);
+    }
+    code {
+      font: 0.82rem ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: color-mix(in srgb, var(--gold) 16%, transparent);
+      padding: 0.1rem 0.38rem;
+      border-radius: 5px;
+    }
+    .badge {
+      padding: 0.18rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.74rem;
+      font-weight: 700;
+      display: inline-block;
+    }
+    .badge-ok { background: color-mix(in srgb, var(--success) 16%, transparent); color: var(--success); }
+    .badge-warn { background: color-mix(in srgb, var(--warning) 18%, transparent); color: var(--warning); }
+    .badge-err { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
     #statusBanner {
       margin-bottom: 1rem;
-      padding: 0.75rem 1rem;
-      border-radius: 8px;
+      padding: 0.7rem 1rem;
+      border-radius: 10px;
       display: none;
-      font-size: 0.92rem;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+
+    /* Step-by-Step Interactive Walkthrough Styles */
+    .demo-intro {
+      background: color-mix(in srgb, var(--gold) 12%, var(--panel));
+      border: 1px solid var(--gold);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .step-grid { display: flex; flex-direction: column; gap: 1.1rem; }
+    .step-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-left: 5px solid var(--primary);
+      border-radius: 12px;
+      padding: 1.15rem 1.3rem;
+    }
+    .step-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.55rem;
+    }
+    .step-num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.78rem;
+      padding: 0.18rem 0.65rem;
+      border-radius: 999px;
+      margin-right: 0.45rem;
+    }
+    .step-title {
+      font: 600 1.08rem/1.3 Georgia, "Times New Roman", serif;
+      color: var(--text);
+      display: inline;
+    }
+    .talking-point {
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      font-size: 0.86rem;
+      color: var(--text);
+      margin-bottom: 0.8rem;
+      border-left: 3px solid var(--gold);
+    }
+    .talking-point b { color: var(--primary); }
+    .step-result {
+      margin-top: 0.75rem;
+      background: var(--code-bg);
+      color: var(--code-fg);
+      border-radius: 8px;
+      padding: 0.75rem 0.95rem;
+      font: 0.8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+      display: none;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
   </style>
 </head>
 <body>
   <header>
-    <div class="brand">Core Banking System — Operations Console (v1.0.0)</div>
-    <div class="row" style="margin-bottom: 0;">
-      <span id="authInfo" style="color: var(--muted); font-size: 0.88rem;">Chưa đăng nhập</span>
-      <input type="text" id="loginUser" placeholder="Username" value="admin" style="width: 110px;" />
-      <input type="password" id="loginPass" placeholder="Password" value="Admin@123" style="width: 120px;" />
-      <button class="btn-primary" onclick="customLogin()">Đăng nhập</button>
-      <button class="btn-outline" onclick="quickLogin('admin', 'Admin@123')">ADMIN (Local)</button>
-      <button class="btn-outline" onclick="quickLogin('cust.an', 'Customer@123')">cust.an</button>
-      <button class="btn-outline" onclick="quickLogin('cust.binh', 'Customer@123')">cust.binh</button>
-      <a href="/swagger-ui/index.html" target="_blank" style="color: var(--primary); text-decoration: none; font-size: 0.88rem; margin-left: 0.25rem;">Swagger UI ↗</a>
+    <div class="header-top">
+      <div class="brand-wrap">
+        <div class="brand">Core Banking System — Operations Console (v1.0.0)</div>
+        <div class="brand-sub">Spring Boot 3.5 · Java 21 Virtual Threads · PostgreSQL 17 · Redis 7</div>
+      </div>
+
+      <div class="nav-tabs" role="tablist">
+        <button type="button" id="tabBtnConsole" class="nav-tab active" onclick="switchView('console')">Bảng điều khiển Nghiệp vụ</button>
+        <button type="button" id="tabBtnData" class="nav-tab" onclick="switchView('data')">Quản lý Dữ liệu (CRUD)</button>
+        <button type="button" id="tabBtnGuide" class="nav-tab" onclick="switchView('guide')">Tài khoản Mẫu &amp; Tài liệu</button>
+        <a href="/swagger-ui/index.html" target="_blank" class="nav-tab">Swagger UI</a>
+      </div>
+    </div>
+
+    <div class="auth-bar">
+      <div class="auth-status">
+        <span class="dot-up"></span>
+        <span id="authInfo">Chưa đăng nhập — Hãy chọn vai trò bên phải</span>
+      </div>
+      <div class="row">
+        <span style="font-size: 0.78rem; color: var(--muted);">Đổi nhanh vai trò:</span>
+        <button class="btn-primary" onclick="quickLogin('admin', 'Admin@123')">ADMIN (Toàn quyền)</button>
+        <button class="btn-outline" onclick="quickLogin('cust.an', 'Customer@123')">KH Nguyễn Văn An (TK #1)</button>
+        <button class="btn-outline" onclick="quickLogin('cust.binh', 'Customer@123')">KH Trần Thị Bình (TK #2)</button>
+        <details style="position: relative;">
+          <summary style="font-size: 0.8rem; color: var(--muted); cursor: pointer; padding: 0.3rem 0.5rem;">Đăng nhập tùy chỉnh</summary>
+          <div class="card" style="position: absolute; right: 0; top: 2rem; z-index: 40; width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.18);">
+            <div class="field" style="margin-bottom: 0.5rem;">
+              <label for="loginUser">Tên đăng nhập (Username)</label>
+              <input type="text" id="loginUser" placeholder="Username" value="admin" />
+            </div>
+            <div class="field" style="margin-bottom: 0.6rem;">
+              <label for="loginPass">Mật khẩu (Password)</label>
+              <input type="password" id="loginPass" placeholder="Password" value="Admin@123" />
+            </div>
+            <button class="btn-primary" style="width: 100%; justify-content: center;" onclick="customLogin()">Đăng nhập</button>
+          </div>
+        </details>
+      </div>
     </div>
   </header>
 
@@ -109,179 +373,489 @@
 
     <!-- KPI Row -->
     <div class="grid-4">
-      <div class="card">
+      <div class="card kpi-card">
         <h3>Tổng Tài khoản Hoạt động</h3>
         <div class="kpi" id="kpiAccounts">—</div>
       </div>
-      <div class="card">
-        <h3>Số dư Toàn Hệ thống (VND)</h3>
+      <div class="card kpi-card">
+        <h3>Tổng Số dư Sổ cái (VND)</h3>
         <div class="kpi" id="kpiTotalBalance">—</div>
       </div>
-      <div class="card">
+      <div class="card kpi-card">
         <h3>Tổng Giao dịch Hoàn tất</h3>
         <div class="kpi" id="kpiTxCount">—</div>
       </div>
-      <div class="card">
-        <h3>Trạng thái Hệ thống & Phiên</h3>
-        <div class="kpi" id="kpiRole" style="font-size: 1.15rem; color: var(--primary);">GUEST · UP</div>
+      <div class="card kpi-card">
+        <h3>Vai trò &amp; Sức khỏe Hệ thống</h3>
+        <div class="kpi" id="kpiRole" style="font-size: 1.05rem; color: var(--primary);">GUEST · UP</div>
       </div>
     </div>
 
-    <div class="grid-2">
-      <!-- Quick Transaction Card -->
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
-          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Thực hiện Giao dịch, Xem trước Phí & Idempotency-Key (L1-08 / NC-02)</h3>
-          <span id="feePreviewLabel" style="font-size: 0.85rem; color: var(--success);">Phí dự kiến: —</span>
-        </div>
-        <div class="row">
-          <select id="txType" onchange="previewFee()">
-            <option value="TRANSFER">Chuyển khoản (TRANSFER)</option>
-            <option value="DEPOSIT">Nạp tiền (DEPOSIT)</option>
-            <option value="WITHDRAWAL">Rút tiền (WITHDRAWAL)</option>
-            <option value="PAYMENT">Thanh toán (PAYMENT)</option>
-          </select>
-          <input type="number" id="srcAccId" placeholder="ID TK Nguồn (VD: 1)" value="1" style="width: 145px;" />
-          <input type="number" id="tgtAccId" placeholder="ID TK Đích (VD: 2)" value="2" style="width: 145px;" />
-          <button class="btn-outline" onclick="previewFee()">Xem trước Phí</button>
-        </div>
-        <div class="row">
-          <input type="number" id="txAmount" placeholder="Số tiền (VND)" value="250000" style="width: 160px;" oninput="previewFee()" />
-          <input type="text" id="txLocation" placeholder="Địa điểm" value="Hà Nội" style="width: 130px;" />
-          <input type="text" id="txDesc" placeholder="Nội dung giao dịch" value="Giao dịch trên Operations Console" style="flex: 1;" />
-        </div>
-        <div class="row" style="margin-bottom: 0;">
-          <input type="text" id="idemKey" placeholder="Idempotency-Key" style="flex: 1;" />
-          <button class="btn-outline" onclick="regenIdemKey()">Đổi Key mới</button>
-          <button class="btn-primary" onclick="submitTransaction()">Gửi / Gửi lại cùng Idempotency-Key</button>
-        </div>
-      </div>
+    <!-- =====================================================================
+         VIEW 1: CLEAN OPERATIONS CONSOLE (DEFAULT VIEW FOR HIRING PANEL)
+         ===================================================================== -->
+    <div id="consoleView">
+      <div class="grid-2">
+        <!-- Quick Transaction Card with Explicit Labels -->
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <div class="section-eyebrow">Giao dịch &amp; Chống gửi trùng (L1-08 · NC-02)</div>
+              <h3>Thực hiện Giao dịch, Xem trước Phí &amp; Idempotency-Key</h3>
+            </div>
+            <span id="feePreviewLabel" class="badge badge-ok">Phí dự kiến: —</span>
+          </div>
 
-      <!-- Balance Tiers, Accounts & Report Export Card -->
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Nhóm Số dư (L1-09), Kỳ Báo cáo (L3-01) & Xuất File (L3-07)</h3>
-          <div class="row" style="margin-bottom: 0;">
-            <button class="btn-outline" onclick="loadDashboardData()">Làm mới</button>
-            <button class="btn-outline" onclick="exportFile('XLSX')">Tải Excel (.xlsx)</button>
-            <button class="btn-outline" onclick="exportFile('PDF')">Tải PDF (.pdf)</button>
+          <div class="grid-3">
+            <div class="field">
+              <label for="txType">1. Loại giao dịch</label>
+              <select id="txType" onchange="onTxTypeChange()">
+                <option value="TRANSFER">Chuyển khoản (TRANSFER)</option>
+                <option value="DEPOSIT">Nạp tiền vào TK đích (DEPOSIT)</option>
+                <option value="WITHDRAWAL">Rút tiền từ TK nguồn (WITHDRAWAL)</option>
+                <option value="PAYMENT">Thanh toán hóa đơn (PAYMENT)</option>
+              </select>
+            </div>
+            <div class="field" id="srcAccField">
+              <label for="srcAccId">2. Từ Tài khoản Nguồn (Trích nợ)</label>
+              <select id="srcAccId">
+                <option value="1">[#1] (đăng nhập để tải danh sách)</option>
+              </select>
+            </div>
+            <div class="field" id="tgtAccField">
+              <label for="tgtAccId">3. Đến Tài khoản Đích (Ghi có)</label>
+              <select id="tgtAccId">
+                <option value="2">[#2] (đăng nhập để tải danh sách)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid-3">
+            <div class="field">
+              <label for="txAmount">4. Số tiền giao dịch (VND)</label>
+              <input type="number" id="txAmount" placeholder="VD: 1000000" value="1000000" oninput="previewFee()" />
+            </div>
+            <div class="field">
+              <label for="txLocation">5. Địa điểm giao dịch</label>
+              <input type="text" id="txLocation" placeholder="VD: Hà Nội" value="Hà Nội" />
+            </div>
+            <div class="field">
+              <label for="txDesc">6. Nội dung giao dịch</label>
+              <input type="text" id="txDesc" placeholder="Nội dung" value="Chuyển tiền trên Operations Console" />
+            </div>
+          </div>
+
+          <div class="field" style="margin-bottom: 0.85rem;">
+            <label for="idemKey">7. Khóa chống gửi trùng (Idempotency-Key — Giữ nguyên key và bấm Gửi 2 lần để kiểm tra không trừ tiền lần 2)</label>
+            <div class="row">
+              <input type="text" id="idemKey" placeholder="Idempotency-Key" style="flex: 1;" />
+              <button class="btn-outline" onclick="previewFee()">Xem trước Phí</button>
+              <button class="btn-outline" onclick="regenIdemKey()">Tạo Key mới</button>
+              <button class="btn-primary" onclick="submitTransaction()">Thực hiện Giao dịch</button>
+            </div>
           </div>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Nhóm số dư (Tier)</th>
-              <th>Số lượng TK</th>
-              <th>Số giao dịch</th>
-            </tr>
-          </thead>
-          <tbody id="tierTableBody">
-            <tr><td colspan="3" style="color: var(--muted);">Đăng nhập ADMIN để xem thống kê toàn hệ thống...</td></tr>
-          </tbody>
-        </table>
-        <div id="periodicSummaryBox" style="margin-top: 0.65rem; font-size: 0.84rem; color: var(--muted);">
-          Báo cáo định kỳ Quý (QUARTER): —
-        </div>
-      </div>
-    </div>
 
-    <div class="grid-2">
-      <!-- Alerts & Fraud Scan Card -->
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Cảnh báo Giao dịch Bất thường (L3-03 / L3-04)</h3>
-          <div class="row" style="margin-bottom: 0;">
-            <button class="btn-outline" onclick="loadAlerts()">Tải Alerts</button>
-            <button class="btn-outline" onclick="runHistoricalFraudScan()">Quét Lịch sử (Window SQL)</button>
+        <!-- Balance Tiers, Accounts & Report Export Card -->
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <div class="section-eyebrow">Thống kê &amp; Báo cáo (L1-09 · L3-01 · L3-07)</div>
+              <h3>Nhóm Số dư, Kỳ Báo cáo &amp; Xuất File</h3>
+            </div>
+            <div class="row">
+              <button class="btn-outline" onclick="loadDashboardData()">Làm mới</button>
+              <button class="btn-primary" onclick="exportFile('XLSX')">Xuất Excel (.xlsx)</button>
+              <button class="btn-primary" onclick="exportFile('PDF')">Xuất PDF (.pdf)</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nhóm số dư (Tier)</th>
+                  <th>Số lượng TK</th>
+                  <th>Số giao dịch</th>
+                </tr>
+              </thead>
+              <tbody id="tierTableBody">
+                <tr><td colspan="3" style="color: var(--muted);">Đang tải thống kê...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="periodicSummaryBox" style="margin-top: 0.65rem; font-size: 0.84rem; color: var(--muted);">
+            Báo cáo định kỳ Quý (QUARTER): —
           </div>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>TK / GD</th>
-              <th>Quy tắc & Mức độ</th>
-              <th>Trạng thái</th>
-              <th>Thao tác FSM</th>
-            </tr>
-          </thead>
-          <tbody id="alertTableBody">
-            <tr><td colspan="5" style="color: var(--muted);">Đăng nhập ADMIN để quản lý cảnh báo...</td></tr>
-          </tbody>
-        </table>
       </div>
 
-      <!-- Trend Series & Location Statistics Card -->
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-          <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Xu hướng Dòng tiền & Phân bố Địa lý (L3-08 / L1-10)</h3>
-          <span id="locationSummary" style="color: var(--muted); font-size: 0.85rem;">—</span>
+      <div class="grid-2">
+        <!-- Alerts & Fraud Scan Card -->
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <div class="section-eyebrow">An toàn &amp; Chống gian lận (L3-03 · L3-04)</div>
+              <h3>Cảnh báo Giao dịch Bất thường</h3>
+            </div>
+            <div class="row">
+              <button class="btn-outline" onclick="loadAlerts()">Tải Cảnh báo</button>
+              <button class="btn-outline" onclick="runHistoricalFraudScan()">Quét Lịch sử (Window SQL)</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>TK / GD</th>
+                  <th>Quy tắc &amp; Mức độ</th>
+                  <th>Trạng thái</th>
+                  <th>Thao tác xử lý (FSM)</th>
+                </tr>
+              </thead>
+              <tbody id="alertTableBody">
+                <tr><td colspan="5" style="color: var(--muted);">Đang tải cảnh báo...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Kỳ (Bucket)</th>
-              <th>Số GD</th>
-              <th>Tổng tiền (VND)</th>
-              <th>Tổng phí (VND)</th>
-              <th>Số dư cuối kỳ (VND)</th>
-            </tr>
-          </thead>
-          <tbody id="trendTableBody">
-            <tr><td colspan="5" style="color: var(--muted);">Đăng nhập ADMIN để xem chuỗi xu hướng...</td></tr>
-          </tbody>
-        </table>
+
+        <!-- Trend Series & Location Statistics Card -->
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+            <div>
+              <div class="section-eyebrow">Phân tích Dòng tiền &amp; Khu vực (L3-08 · L1-10)</div>
+              <h3>Xu hướng Dòng tiền &amp; Phân bố Địa lý</h3>
+            </div>
+            <span id="locationSummary" style="color: var(--muted); font-size: 0.84rem;">—</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Kỳ (Bucket)</th>
+                  <th>Số GD</th>
+                  <th>Tổng tiền (VND)</th>
+                  <th>Tổng phí (VND)</th>
+                  <th>Số dư cuối kỳ (VND)</th>
+                </tr>
+              </thead>
+              <tbody id="trendTableBody">
+                <tr><td colspan="5" style="color: var(--muted);">Đang tải chuỗi xu hướng...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Accounts & Multi-Filter Transactions Table -->
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <div class="section-eyebrow">Sổ cái &amp; Truy vấn Đa tiêu chí (L1-06 · L2-03 · NC-14)</div>
+            <h3>Danh sách Tài khoản &amp; Tìm kiếm Giao dịch Đa bộ lọc</h3>
+          </div>
+          <span id="accountsSummary" style="color: var(--muted); font-size: 0.84rem;">Tài khoản: —</span>
+        </div>
+        <div class="grid-4" style="margin-bottom: 0.75rem;">
+          <div class="field">
+            <label for="lookupAccId">Tài khoản cần tra cứu</label>
+            <select id="lookupAccId" onchange="loadAccountTransactions()">
+              <option value="1">[#1] (đăng nhập để tải danh sách)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filterTxType">Loại giao dịch</label>
+            <select id="filterTxType">
+              <option value="">Tất cả loại GD</option>
+              <option value="DEPOSIT">DEPOSIT (Nạp tiền)</option>
+              <option value="WITHDRAWAL">WITHDRAWAL (Rút tiền)</option>
+              <option value="TRANSFER">TRANSFER (Chuyển khoản)</option>
+              <option value="PAYMENT">PAYMENT (Thanh toán)</option>
+              <option value="REVERSAL">REVERSAL (Đảo chiều)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filterTxStatus">Trạng thái</label>
+            <select id="filterTxStatus">
+              <option value="">Tất cả trạng thái</option>
+              <option value="COMPLETED">COMPLETED (Hoàn tất)</option>
+              <option value="REVERSED">REVERSED (Đã đảo)</option>
+              <option value="FAILED">FAILED (Thất bại)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button class="btn-primary" style="justify-content: center;" onclick="loadAccountTransactions()">Lọc Giao dịch</button>
+          </div>
+        </div>
+        <div class="grid-4" style="margin-bottom: 0.75rem;">
+          <div class="field">
+            <label for="filterMinAmount">Số tiền tối thiểu (VND)</label>
+            <input type="number" id="filterMinAmount" placeholder="Từ (VD: 100000)" />
+          </div>
+          <div class="field">
+            <label for="filterMaxAmount">Số tiền tối đa (VND)</label>
+            <input type="number" id="filterMaxAmount" placeholder="Đến (VD: 50000000)" />
+          </div>
+          <div class="field">
+            <label for="filterFromDate">Từ ngày</label>
+            <input type="date" id="filterFromDate" />
+          </div>
+          <div class="field">
+            <label for="filterToDate">Đến ngày</label>
+            <input type="date" id="filterToDate" />
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Mã tham chiếu (Reference)</th>
+                <th>Loại</th>
+                <th>TK Nguồn &rarr; Đích</th>
+                <th>Số tiền (VND)</th>
+                <th>Phí (VND)</th>
+                <th>Trạng thái</th>
+                <th>Thời gian</th>
+              </tr>
+            </thead>
+            <tbody id="txTableBody">
+              <tr><td colspan="8" style="color: var(--muted);">Đang tải danh sách giao dịch...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Audit Log & Keyset Cursor Card -->
+      <div class="card" style="margin-top: 1.2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.65rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <div class="section-eyebrow">Kiểm toán Bất biến &amp; Phân trang Con trỏ (NC-14 · NC-16)</div>
+            <h3>Nhật ký Kiểm toán (Audit Log) &amp; Truy vấn Keyset Cursor O(1)</h3>
+          </div>
+          <div class="row">
+            <button class="btn-outline" onclick="loadCursorPages()">Truy vấn Keyset Cursor O(1)</button>
+            <button class="btn-outline" onclick="loadAuditLogs()">Tải Nhật ký Kiểm toán (Audit Log)</button>
+          </div>
+        </div>
+        <div id="step6Result" class="step-result"></div>
       </div>
     </div>
 
-    <!-- Accounts & Multi-Filter Transactions Table -->
-    <div class="card" style="margin-bottom: 1.5rem;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-        <h3 style="color: var(--primary); font-size: 1.02rem; margin: 0;">Danh sách Tài khoản & Tìm kiếm Giao dịch Đa bộ lọc (L1-06 / L2-03 / L2-04)</h3>
-        <span id="accountsSummary" style="color: var(--muted); font-size: 0.85rem;">Tài khoản: —</span>
+    <!-- =====================================================================
+         VIEW 2: DATA MANAGEMENT (CRUD) — ADMIN
+         ===================================================================== -->
+    <div id="dataView" style="display: none;">
+      <div class="card" style="margin-bottom: 1.2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <div class="section-eyebrow">8 · Khách hàng (L1-01 · L1-04 · L2-04)</div>
+            <h3>Quản lý Khách hàng: tạo, tìm, sửa (optimistic lock), xoá mềm</h3>
+          </div>
+          <span id="customerPageInfo" style="color: var(--muted); font-size: 0.84rem;">—</span>
+        </div>
+        <div class="grid-4" style="margin-bottom: 0.75rem;">
+          <div class="field"><label for="custSearchName">Tên chứa</label><input id="custSearchName" placeholder="VD: Nguyễn" /></div>
+          <div class="field"><label for="custSearchLocation">Địa điểm</label><input id="custSearchLocation" placeholder="VD: Hà Nội" /></div>
+          <div class="field">
+            <label for="custSearchType">Loại khách hàng</label>
+            <select id="custSearchType"><option value="">Tất cả</option><option value="INDIVIDUAL">INDIVIDUAL</option><option value="BUSINESS">BUSINESS</option></select>
+          </div>
+          <div class="field"><label>&nbsp;</label>
+            <div class="row">
+              <button class="btn-primary" onclick="loadCustomers(0)">Tìm</button>
+              <button class="btn-outline" onclick="customerPage(-1)">&larr;</button>
+              <button class="btn-outline" onclick="customerPage(1)">&rarr;</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-wrap" style="margin-bottom: 0.9rem;">
+          <table>
+            <thead><tr><th>ID</th><th>Mã KH</th><th>Họ tên</th><th>CCCD (che)</th><th>Địa điểm</th><th>Loại</th><th>Ver</th><th>Thao tác</th></tr></thead>
+            <tbody id="customerTableBody"><tr><td colspan="8" style="color: var(--muted);">Đăng nhập ADMIN để tải.</td></tr></tbody>
+          </table>
+        </div>
+        <h3 id="customerFormTitle" style="font-size: 0.95rem;">Tạo khách hàng mới</h3>
+        <input type="hidden" id="custId" /><input type="hidden" id="custVersion" />
+        <div class="grid-4" style="margin-bottom: 0.6rem;">
+          <div class="field"><label for="custFullName">Họ tên *</label><input id="custFullName" placeholder="Nguyễn Văn Mẫu" /></div>
+          <div class="field"><label for="custNationalId">CCCD giả lập * (000 + 9 số)</label><input id="custNationalId" placeholder="000123456789" /></div>
+          <div class="field"><label for="custEmail">Email</label><input id="custEmail" placeholder="mau@example.com" /></div>
+          <div class="field"><label for="custPhone">Điện thoại</label><input id="custPhone" placeholder="0900000099" /></div>
+          <div class="field"><label for="custAddress">Địa chỉ</label><input id="custAddress" placeholder="Số 1 Đường Mẫu" /></div>
+          <div class="field"><label for="custLocation">Tỉnh/Thành *</label><input id="custLocation" value="Hà Nội" /></div>
+          <div class="field"><label for="custDob">Ngày sinh</label><input type="date" id="custDob" /></div>
+          <div class="field">
+            <label for="custType">Loại khách hàng</label>
+            <select id="custType"><option value="INDIVIDUAL">INDIVIDUAL (Cá nhân)</option><option value="BUSINESS">BUSINESS (Doanh nghiệp)</option></select>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn-primary" onclick="saveCustomer()">Lưu khách hàng</button>
+          <button class="btn-outline" onclick="resetCustomerForm()">Huỷ / Tạo mới</button>
+        </div>
       </div>
-      <div class="row">
-        <input type="number" id="lookupAccId" placeholder="Account ID (VD: 1)" value="1" style="width: 130px;" />
-        <select id="filterTxType">
-          <option value="">Tất cả loại GD</option>
-          <option value="DEPOSIT">DEPOSIT</option>
-          <option value="WITHDRAWAL">WITHDRAWAL</option>
-          <option value="TRANSFER">TRANSFER</option>
-          <option value="PAYMENT">PAYMENT</option>
-          <option value="REVERSAL">REVERSAL</option>
-        </select>
-        <select id="filterTxStatus">
-          <option value="">Tất cả trạng thái</option>
-          <option value="COMPLETED">COMPLETED</option>
-          <option value="REVERSED">REVERSED</option>
-          <option value="FAILED">FAILED</option>
-        </select>
-        <input type="number" id="filterMinAmount" placeholder="Số tiền từ (VND)" style="width: 145px;" />
-        <input type="number" id="filterMaxAmount" placeholder="Số tiền đến (VND)" style="width: 145px;" />
-        <input type="date" id="filterFromDate" title="Từ ngày" />
-        <input type="date" id="filterToDate" title="Đến ngày" />
-        <button class="btn-outline" onclick="loadAccountTransactions()">Tra cứu</button>
+
+      <div class="card" id="accountsCard" style="margin-bottom: 1.2rem;">
+        <div class="section-eyebrow">9 · Tài khoản (L1-02 · L1-05 · L2-05)</div>
+        <h3>Quản lý Tài khoản: mở, sửa hạn mức, khoá / mở khoá / đóng, lịch sử trạng thái</h3>
+        <div class="grid-4" style="margin: 0.75rem 0;">
+          <div class="field"><label for="accFilterCustomer">Lọc theo ID khách hàng</label><input type="number" id="accFilterCustomer" placeholder="VD: 1" /></div>
+          <div class="field">
+            <label for="accFilterStatus">Trạng thái</label>
+            <select id="accFilterStatus"><option value="">Tất cả</option><option value="ACTIVE">ACTIVE</option><option value="LOCKED">LOCKED</option><option value="CLOSED">CLOSED</option></select>
+          </div>
+          <div class="field"><label>&nbsp;</label><button class="btn-primary" onclick="loadAccountsAdmin()">Lọc tài khoản</button></div>
+        </div>
+        <div class="table-wrap" style="margin-bottom: 0.9rem;">
+          <table>
+            <thead><tr><th>ID</th><th>Số TK</th><th>Chủ TK</th><th>Số dư (VND)</th><th>Hạn mức lệnh / ngày</th><th>Trạng thái</th><th>Ver</th><th>Thao tác</th></tr></thead>
+            <tbody id="accountAdminTableBody"><tr><td colspan="8" style="color: var(--muted);">Đăng nhập ADMIN để tải.</td></tr></tbody>
+          </table>
+        </div>
+        <div class="grid-4">
+          <div class="field"><label for="accCustomerId">ID khách hàng *</label><input type="number" id="accCustomerId" placeholder="VD: 1" /></div>
+          <div class="field"><label for="accTxLimit">Hạn mức mỗi lệnh (VND)</label><input type="number" id="accTxLimit" value="50000000" /></div>
+          <div class="field"><label for="accDailyLimit">Hạn mức trong ngày (VND)</label><input type="number" id="accDailyLimit" value="200000000" /></div>
+          <div class="field"><label>&nbsp;</label><button class="btn-primary" onclick="openAccount()">Mở tài khoản</button></div>
+        </div>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Mã tham chiếu (Reference)</th>
-            <th>Loại</th>
-            <th>TK Nguồn &rarr; Đích</th>
-            <th>Số tiền (VND)</th>
-            <th>Phí (VND)</th>
-            <th>Trạng thái</th>
-            <th>Thời gian</th>
-          </tr>
-        </thead>
-        <tbody id="txTableBody">
-          <tr><td colspan="8" style="color: var(--muted);">Hãy bấm đăng nhập ở góc phải phía trên để tải dữ liệu...</td></tr>
-        </tbody>
-      </table>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="section-eyebrow">10 · Giao dịch theo ID (L1-06)</div>
+          <h3>Xem, sửa mô tả, đảo giao dịch (REVERSAL)</h3>
+          <div class="row" style="margin: 0.75rem 0;">
+            <input type="number" id="txLookupId" placeholder="ID giao dịch, VD: 1" style="max-width: 180px;" />
+            <button class="btn-primary" onclick="lookupTransaction()">Xem</button>
+            <button class="btn-outline" onclick="reverseTransaction()">Đảo giao dịch</button>
+          </div>
+          <div id="txLookupSummary" style="font-size: 0.85rem; color: var(--muted); margin-bottom: 0.6rem;">Nhập ID rồi bấm Xem. Số tiền không sửa được; muốn huỷ thì đảo giao dịch.</div>
+          <div class="grid-2" style="margin-bottom: 0.6rem;">
+            <div class="field"><label for="txEditDesc">Mô tả</label><input id="txEditDesc" /></div>
+            <div class="field"><label for="txEditLocation">Địa điểm</label><input id="txEditLocation" /></div>
+          </div>
+          <button class="btn-outline" onclick="updateTransactionMeta()">Lưu mô tả</button>
+        </div>
+
+        <div class="card">
+          <div class="section-eyebrow">11 · Loại khách hàng (L3-05)</div>
+          <h3>Hạn mức theo loại khách hàng</h3>
+          <div class="table-wrap" style="margin-top: 0.75rem;">
+            <table>
+              <thead><tr><th>Mã</th><th>Tên</th><th>Tối đa / lệnh</th><th>Tối đa / ngày</th><th>Ver</th><th></th></tr></thead>
+              <tbody id="customerTypeTableBody"><tr><td colspan="6" style="color: var(--muted);">—</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 1.2rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 0.5rem;">
+          <div>
+            <div class="section-eyebrow">12 · Giao dịch định kỳ (L2-06 · L2-07)</div>
+            <h3>Lịch giao dịch định kỳ: tạo, tạm dừng, chạy lại, huỷ</h3>
+          </div>
+          <div class="row">
+            <select id="recFilterStatus" onchange="loadRecurring()"><option value="">Tất cả trạng thái</option><option value="ACTIVE">ACTIVE</option><option value="PAUSED">PAUSED</option><option value="CANCELLED">CANCELLED</option></select>
+            <button class="btn-outline" onclick="loadRecurring()">Làm mới</button>
+          </div>
+        </div>
+        <div class="grid-4" style="margin: 0.75rem 0;">
+          <div class="field">
+            <label for="recType">Loại</label>
+            <select id="recType" onchange="onRecTypeChange()"><option value="TRANSFER">TRANSFER</option><option value="PAYMENT">PAYMENT</option><option value="DEPOSIT">DEPOSIT</option></select>
+          </div>
+          <div class="field" id="recSourceField"><label for="recSource">TK nguồn</label><input type="number" id="recSource" value="1" /></div>
+          <div class="field" id="recTargetField"><label for="recTarget">TK đích</label><input type="number" id="recTarget" value="2" /></div>
+          <div class="field"><label for="recAmount">Số tiền mỗi kỳ (VND)</label><input type="number" id="recAmount" value="500000" /></div>
+          <div class="field">
+            <label for="recFrequency">Tần suất</label>
+            <select id="recFrequency"><option value="MONTHLY">MONTHLY</option><option value="WEEKLY">WEEKLY</option><option value="DAILY">DAILY</option></select>
+          </div>
+          <div class="field"><label for="recStart">Ngày bắt đầu</label><input type="date" id="recStart" /></div>
+          <div class="field"><label for="recEnd">Ngày kết thúc (tuỳ chọn)</label><input type="date" id="recEnd" /></div>
+          <div class="field"><label for="recDesc">Mô tả</label><input id="recDesc" value="Tiết kiệm hàng tháng" /></div>
+        </div>
+        <button class="btn-primary" onclick="createRecurring()" style="margin-bottom: 0.75rem;">Tạo lịch định kỳ</button>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Loại</th><th>Nguồn &rarr; Đích</th><th>Số tiền</th><th>Tần suất</th><th>Lần chạy tới</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+            <tbody id="recurringTableBody"><tr><td colspan="8" style="color: var(--muted);">—</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 1.2rem;">
+        <div class="section-eyebrow">Nhật ký Request / Response (6 lệnh gần nhất, mới nhất ở trên)</div>
+        <pre id="dataResult" class="step-result" style="display: block; max-height: 420px; overflow: auto;">Mỗi thao tác ở trên sẽ hiện request và response thật tại đây.</pre>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         VIEW 3: GUIDE & DEMO ACCOUNTS (/guide)
+         ===================================================================== -->
+    <div id="guideView" style="display: none; max-width: 880px; margin: 0 auto;">
+      <div class="card" style="margin-bottom: 1.25rem;">
+        <div class="section-eyebrow">Tài liệu Hệ thống &amp; Tài khoản Thử nghiệm</div>
+        <h3 style="font-size: 1.35rem; margin-bottom: 0.4rem;">Core Banking System v1.0.0 — Hướng dẫn Sử dụng Nhanh</h3>
+        <p style="color: var(--muted); margin-bottom: 1rem;">
+          Hệ thống cung cấp giao diện <b>Bảng điều khiển Nghiệp vụ</b> và 26 REST API chuẩn OpenAPI 3.0. Chọn nhanh một trong các tài khoản mẫu bên dưới để chuyển đổi phân quyền <code>ROLE_ADMIN</code> và <code>ROLE_CUSTOMER</code>.
+        </p>
+        <div class="row">
+          <button class="btn-primary" onclick="switchView('console')">Mở Bảng điều khiển Nghiệp vụ</button>
+          <a class="btn-link" href="/swagger-ui/index.html" target="_blank">Mở Swagger UI</a>
+          <a class="btn-link" href="https://github.com/tsennguyen/corebank-java-assessment" target="_blank">Mã nguồn &amp; README</a>
+          <a class="btn-link" href="/actuator/health" target="_blank">Health Check</a>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 1.25rem;">
+        <div class="section-eyebrow">Danh sách Tài khoản Mẫu (Seeded by Flyway R__demo_seed.sql)</div>
+        <h3>Tài khoản Đăng nhập &amp; Phân quyền</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Vai trò / Role</th>
+                <th>Username</th>
+                <th>Password</th>
+                <th>Phạm vi Quyền hạn</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="badge badge-ok">ROLE_ADMIN</span></td>
+                <td><code>admin</code></td>
+                <td><code>Admin@123</code></td>
+                <td>Toàn quyền quản trị KH, TK, Giao dịch, Báo cáo Excel/PDF, Cảnh báo &amp; Audit Log</td>
+                <td><button class="btn-primary" onclick="switchView('console'); quickLogin('admin', 'Admin@123')">Đăng nhập admin</button></td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-warn">ROLE_CUSTOMER</span></td>
+                <td><code>cust.an</code></td>
+                <td><code>Customer@123</code></td>
+                <td>Sở hữu TK <code>#1 (100800000018)</code> — Chặn 403 nếu xem TK người khác</td>
+                <td><button class="btn-outline" onclick="switchView('console'); quickLogin('cust.an', 'Customer@123')">Đăng nhập cust.an</button></td>
+              </tr>
+              <tr>
+                <td><span class="badge badge-warn">ROLE_CUSTOMER</span></td>
+                <td><code>cust.binh</code></td>
+                <td><code>Customer@123</code></td>
+                <td>Sở hữu TK <code>#2 (100800000026)</code> — Chặn 403 nếu xem TK người khác</td>
+                <td><button class="btn-outline" onclick="switchView('console'); quickLogin('cust.binh', 'Customer@123')">Đăng nhập cust.binh</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 
   <script src="app.js"></script>
+  <script src="crud.js"></script>
 </body>
 </html>
