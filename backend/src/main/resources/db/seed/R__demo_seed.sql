@@ -25,7 +25,14 @@ INSERT INTO core.customer (
     ('CUS8000018', 'Lương Thế Vinh', '000101000018', 'luongthevinh.demo@example.com', '0900000018', 'Số 90 Đường Mẫu R, Quận Lê Chân', 'Hải Phòng', '1984-05-03', CURRENT_TIMESTAMP - INTERVAL '75 days'),
     ('CUS8000019', 'Phan Tuyết Yến', '000101000019', 'phantuyetyen.demo@example.com', '0900000019', 'Số 14 Đường Mẫu S, Quận Ninh Kiều', 'Cần Thơ', '1993-09-09', CURRENT_TIMESTAMP - INTERVAL '50 days'),
     ('CUS8000020', 'Hồ Tuấn Kiệt', '000101000020', 'hotuankiet.demo@example.com', '0900000020', 'Số 42 Đường Mẫu T, Quận Cái Răng', 'Cần Thơ', '1990-12-30', CURRENT_TIMESTAMP - INTERVAL '30 days')
-ON CONFLICT (customer_code) DO NOTHING;
+ON CONFLICT DO NOTHING;
+
+-- Classify corporate demo customers as BUSINESS (L3-05, Story 4.1)
+UPDATE core.customer
+SET customer_type_id = (SELECT id FROM core.customer_type WHERE code = 'BUSINESS'),
+    customer_type_code = 'BUSINESS'
+WHERE customer_code IN ('CUS8000007', 'CUS8000013');
+
 
 -- 2. Seed synthetic accounts across LOW (< 10M), MEDIUM (10M - < 100M), and HIGH (>= 100M) tiers
 INSERT INTO core.account (
@@ -45,15 +52,25 @@ FROM (
         ('100800000075', 'CUS8000009', 65000000.00::numeric(19,2), 50000000.00::numeric(19,2), 200000000.00::numeric(19,2), (CURRENT_DATE - 200), (CURRENT_TIMESTAMP - INTERVAL '200 days')),
         ('100800000083', 'CUS8000014', 15000000.00::numeric(19,2), 50000000.00::numeric(19,2), 200000000.00::numeric(19,2), (CURRENT_DATE - 140), (CURRENT_TIMESTAMP - INTERVAL '140 days')),
         -- HIGH tier accounts (>= 100,000,000 VND)
-        ('100800000091', 'CUS8000007', 386996000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 250), (CURRENT_TIMESTAMP - INTERVAL '250 days')),
-        ('100800000109', 'CUS8000013', 534997000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 160), (CURRENT_TIMESTAMP - INTERVAL '160 days')),
+        ('100800000091', 'CUS8000007', 455984000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 250), (CURRENT_TIMESTAMP - INTERVAL '250 days')),
+        ('100800000109', 'CUS8000013', 465987000.00::numeric(19,2), 500000000.00::numeric(19,2), 2000000000.00::numeric(19,2), (CURRENT_DATE - 160), (CURRENT_TIMESTAMP - INTERVAL '160 days')),
         ('100800000117', 'CUS8000017', 125000000.00::numeric(19,2), 100000000.00::numeric(19,2), 500000000.00::numeric(19,2), (CURRENT_DATE - 90), (CURRENT_TIMESTAMP - INTERVAL '90 days')),
         ('100800000125', 'CUS8000019', 180000000.00::numeric(19,2), 100000000.00::numeric(19,2), 500000000.00::numeric(19,2), (CURRENT_DATE - 45), (CURRENT_TIMESTAMP - INTERVAL '45 days'))
 ) AS v(acc_num, cust_code, balance, tx_limit, daily_limit, opened_date, created_at)
 JOIN core.customer c ON c.customer_code = v.cust_code
 ON CONFLICT (account_number) DO NOTHING;
 
--- 3. Seed synthetic historical transactions across 12 months (strictly consistent with account balances)
+-- 2b. Seed initial status history (NULL -> ACTIVE) for demo accounts that do not yet have a history entry
+INSERT INTO core.account_status_history (
+    account_id, from_status, to_status, reason, changed_by, changed_at
+)
+SELECT a.id, NULL, a.status, 'Account opened', 'SYSTEM_SEED', a.created_at
+FROM core.account a
+WHERE NOT EXISTS (
+    SELECT 1 FROM core.account_status_history h WHERE h.account_id = a.id
+);
+
+-- 3. Seed synthetic historical transactions across 12 months in ascending chronological order (strictly consistent with account balances)
 INSERT INTO core.transaction (
     reference_no, type, source_account_id, target_account_id, amount, fee,
     source_balance_after, target_balance_after, system_balance_delta,
@@ -64,31 +81,90 @@ SELECT v.ref_no, v.tx_type, src.id, tgt.id, v.amount, v.fee,
        v.location, v.description, 'COMPLETED', 'SYSTEM_SEED', v.created_at
 FROM (
     VALUES
-        ('TXN-SEED-0001', 'DEPOSIT', NULL, '100800000091', 400000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 400000000.00::numeric(19,2), 400000000.00::numeric(19,2), 'Hà Nội', 'Nạp vốn kinh doanh ban đầu', CURRENT_TIMESTAMP - INTERVAL '240 days'),
-        ('TXN-SEED-0002', 'DEPOSIT', NULL, '100800000109', 550000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 550000000.00::numeric(19,2), 550000000.00::numeric(19,2), 'Hồ Chí Minh', 'Nạp tiền mặt tại quầy giao dịch', CURRENT_TIMESTAMP - INTERVAL '155 days'),
-        ('TXN-SEED-0003', 'DEPOSIT', NULL, '100800000059', 30000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 30000000.00::numeric(19,2), 30000000.00::numeric(19,2), 'Hà Nội', 'Nạp tiền tiết kiệm cá nhân', CURRENT_TIMESTAMP - INTERVAL '210 days'),
-        ('TXN-SEED-0004', 'DEPOSIT', NULL, '100800000067', 50000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 50000000.00::numeric(19,2), 50000000.00::numeric(19,2), 'Hồ Chí Minh', 'Nạp tiền mở tài khoản', CURRENT_TIMESTAMP - INTERVAL '190 days'),
-        ('TXN-SEED-0005', 'TRANSFER', '100800000091', '100800000018', 5000000.00::numeric(19,2), 2000.00::numeric(19,2), 394998000.00::numeric(19,2), 5000000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Thanh toán lương tháng 03', CURRENT_TIMESTAMP - INTERVAL '180 days'),
-        ('TXN-SEED-0006', 'TRANSFER', '100800000091', '100800000026', 8000000.00::numeric(19,2), 2000.00::numeric(19,2), 386996000.00::numeric(19,2), 8000000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Thanh toán phụ cấp dự án', CURRENT_TIMESTAMP - INTERVAL '150 days'),
-        ('TXN-SEED-0007', 'WITHDRAWAL', '100800000018', NULL, 1498000.00::numeric(19,2), 2000.00::numeric(19,2), 3500000.00::numeric(19,2), NULL::numeric(19,2), -1500000.00::numeric(19,2), 'Hà Nội', 'Rút tiền mặt tại ATM', CURRENT_TIMESTAMP - INTERVAL '120 days'),
-        ('TXN-SEED-0008', 'PAYMENT', '100800000026', NULL, 800000.00::numeric(19,2), 0.00::numeric(19,2), 7200000.00::numeric(19,2), NULL::numeric(19,2), -800000.00::numeric(19,2), 'Hà Nội', 'Thanh toán hóa đơn điện nước', CURRENT_TIMESTAMP - INTERVAL '90 days'),
-        ('TXN-SEED-0009', 'TRANSFER', '100800000109', '100800000083', 15000000.00::numeric(19,2), 3000.00::numeric(19,2), 534997000.00::numeric(19,2), 15000000.00::numeric(19,2), -3000.00::numeric(19,2), 'Đà Nẵng', 'Tạm ứng hợp đồng dịch vụ', CURRENT_TIMESTAMP - INTERVAL '60 days'),
-        ('TXN-SEED-0010', 'PAYMENT', '100800000059', NULL, 5000000.00::numeric(19,2), 0.00::numeric(19,2), 25000000.00::numeric(19,2), NULL::numeric(19,2), -5000000.00::numeric(19,2), 'Hà Nội', 'Thanh toán cước viễn thông', CURRENT_TIMESTAMP - INTERVAL '30 days'),
-        ('TXN-SEED-0011', 'WITHDRAWAL', '100800000067', NULL, 1998000.00::numeric(19,2), 2000.00::numeric(19,2), 48000000.00::numeric(19,2), NULL::numeric(19,2), -2000000.00::numeric(19,2), 'Hồ Chí Minh', 'Rút tiền chi tiêu cá nhân', CURRENT_TIMESTAMP - INTERVAL '15 days'),
-        ('TXN-SEED-0012', 'DEPOSIT', NULL, '100800000125', 180000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 180000000.00::numeric(19,2), 180000000.00::numeric(19,2), 'Cần Thơ', 'Nạp tiền gửi kỳ hạn linh hoạt', CURRENT_TIMESTAMP - INTERVAL '5 days'),
-        ('TXN-SEED-0013', 'DEPOSIT', NULL, '100800000034', 1500000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 1500000.00::numeric(19,2), 1500000.00::numeric(19,2), 'Hà Nội', 'Nạp tiền mở tài khoản thanh toán', CURRENT_TIMESTAMP - INTERVAL '295 days'),
-        ('TXN-SEED-0014', 'DEPOSIT', NULL, '100800000042', 9000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 9000000.00::numeric(19,2), 9000000.00::numeric(19,2), 'Hà Nội', 'Nạp tiền tiết kiệm tích lũy', CURRENT_TIMESTAMP - INTERVAL '275 days'),
-        ('TXN-SEED-0015', 'DEPOSIT', NULL, '100800000075', 65000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 65000000.00::numeric(19,2), 65000000.00::numeric(19,2), 'Hồ Chí Minh', 'Nạp tiền đầu tư cá nhân', CURRENT_TIMESTAMP - INTERVAL '198 days'),
-        ('TXN-SEED-0016', 'DEPOSIT', NULL, '100800000117', 125000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 125000000.00::numeric(19,2), 125000000.00::numeric(19,2), 'Hải Phòng', 'Nạp tiền kinh doanh thương mại', CURRENT_TIMESTAMP - INTERVAL '85 days')
+        ('TXN-SEED-0001', 'DEPOSIT', NULL, '100800000034', 1500000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 1500000.00::numeric(19,2), 1500000.00::numeric(19,2), 'Hà Nội', 'Nạp tiền mở tài khoản thanh toán', CURRENT_TIMESTAMP - INTERVAL '295 days'),
+        ('TXN-SEED-0002', 'DEPOSIT', NULL, '100800000042', 9000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 9000000.00::numeric(19,2), 9000000.00::numeric(19,2), 'Hà Nội', 'Nạp tiền tiết kiệm tích lũy', CURRENT_TIMESTAMP - INTERVAL '275 days'),
+        ('TXN-SEED-0003', 'DEPOSIT', NULL, '100800000091', 400000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 400000000.00::numeric(19,2), 400000000.00::numeric(19,2), 'Hà Nội', 'Nạp vốn kinh doanh ban đầu', CURRENT_TIMESTAMP - INTERVAL '240 days'),
+        ('TXN-SEED-0004', 'DEPOSIT', NULL, '100800000059', 30000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 30000000.00::numeric(19,2), 30000000.00::numeric(19,2), 'Hà Nội', 'Nạp tiền tiết kiệm cá nhân', CURRENT_TIMESTAMP - INTERVAL '210 days'),
+        ('TXN-SEED-0005', 'DEPOSIT', NULL, '100800000075', 65000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 65000000.00::numeric(19,2), 65000000.00::numeric(19,2), 'Hồ Chí Minh', 'Nạp tiền đầu tư cá nhân', CURRENT_TIMESTAMP - INTERVAL '198 days'),
+        ('TXN-SEED-0006', 'DEPOSIT', NULL, '100800000067', 50000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 50000000.00::numeric(19,2), 50000000.00::numeric(19,2), 'Hồ Chí Minh', 'Nạp tiền mở tài khoản', CURRENT_TIMESTAMP - INTERVAL '190 days'),
+        ('TXN-SEED-0007', 'TRANSFER', '100800000091', '100800000018', 5000000.00::numeric(19,2), 2000.00::numeric(19,2), 394998000.00::numeric(19,2), 5000000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Thanh toán lương tháng 03', CURRENT_TIMESTAMP - INTERVAL '180 days'),
+        ('TXN-SEED-0008', 'DEPOSIT', NULL, '100800000109', 550000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 550000000.00::numeric(19,2), 550000000.00::numeric(19,2), 'Hồ Chí Minh', 'Nạp tiền mặt tại quầy giao dịch', CURRENT_TIMESTAMP - INTERVAL '155 days'),
+        ('TXN-SEED-0009', 'TRANSFER', '100800000091', '100800000026', 8000000.00::numeric(19,2), 2000.00::numeric(19,2), 386996000.00::numeric(19,2), 8000000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Thanh toán phụ cấp dự án', CURRENT_TIMESTAMP - INTERVAL '150 days'),
+        ('TXN-SEED-0010', 'WITHDRAWAL', '100800000018', NULL, 1498000.00::numeric(19,2), 2000.00::numeric(19,2), 3500000.00::numeric(19,2), NULL::numeric(19,2), -1500000.00::numeric(19,2), 'Hà Nội', 'Rút tiền mặt tại ATM', CURRENT_TIMESTAMP - INTERVAL '120 days'),
+        ('TXN-SEED-0011', 'PAYMENT', '100800000026', NULL, 800000.00::numeric(19,2), 0.00::numeric(19,2), 7200000.00::numeric(19,2), NULL::numeric(19,2), -800000.00::numeric(19,2), 'Hà Nội', 'Thanh toán hóa đơn điện nước', CURRENT_TIMESTAMP - INTERVAL '90 days'),
+        ('TXN-SEED-0012', 'DEPOSIT', NULL, '100800000117', 125000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 125000000.00::numeric(19,2), 125000000.00::numeric(19,2), 'Hải Phòng', 'Nạp tiền kinh doanh thương mại', CURRENT_TIMESTAMP - INTERVAL '85 days'),
+        ('TXN-SEED-0013', 'TRANSFER', '100800000109', '100800000083', 15000000.00::numeric(19,2), 3000.00::numeric(19,2), 534997000.00::numeric(19,2), 15000000.00::numeric(19,2), -3000.00::numeric(19,2), 'Đà Nẵng', 'Tạm ứng hợp đồng dịch vụ', CURRENT_TIMESTAMP - INTERVAL '60 days'),
+        ('TXN-SEED-0014', 'PAYMENT', '100800000059', NULL, 5000000.00::numeric(19,2), 0.00::numeric(19,2), 25000000.00::numeric(19,2), NULL::numeric(19,2), -5000000.00::numeric(19,2), 'Hà Nội', 'Thanh toán cước viễn thông', CURRENT_TIMESTAMP - INTERVAL '30 days'),
+        ('TXN-SEED-0015', 'WITHDRAWAL', '100800000067', NULL, 1998000.00::numeric(19,2), 2000.00::numeric(19,2), 48000000.00::numeric(19,2), NULL::numeric(19,2), -2000000.00::numeric(19,2), 'Hồ Chí Minh', 'Rút tiền chi tiêu cá nhân', CURRENT_TIMESTAMP - INTERVAL '15 days'),
+        ('TXN-SEED-0016', 'DEPOSIT', NULL, '100800000125', 180000000.00::numeric(19,2), 0.00::numeric(19,2), NULL::numeric(19,2), 180000000.00::numeric(19,2), 180000000.00::numeric(19,2), 'Cần Thơ', 'Nạp tiền gửi kỳ hạn linh hoạt', CURRENT_TIMESTAMP - INTERVAL '5 days'),
+        -- High-value outgoing transfer (>= 50,000,000 VND) triggering AMOUNT_THRESHOLD alert (L3-03, L3-04, Story 5.6)
+        ('TXN-SEED-0017', 'TRANSFER', '100800000109', '100800000091', 75000000.00::numeric(19,2), 10000.00::numeric(19,2), 459987000.00::numeric(19,2), 461996000.00::numeric(19,2), -10000.00::numeric(19,2), 'Hồ Chí Minh', 'Thanh toán lô thiết bị công nghiệp giá trị lớn', CURRENT_TIMESTAMP - INTERVAL '3 days'),
+        -- Rapid velocity burst (6 outgoing transfers within 30 seconds) triggering VELOCITY alert (L3-03, L3-04, Story 5.6)
+        ('TXN-SEED-0018', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 460994000.00::numeric(19,2), 460987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #1', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '5 seconds'),
+        ('TXN-SEED-0019', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 459992000.00::numeric(19,2), 461987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #2', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '10 seconds'),
+        ('TXN-SEED-0020', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 458990000.00::numeric(19,2), 462987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #3', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '15 seconds'),
+        ('TXN-SEED-0021', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 457988000.00::numeric(19,2), 463987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #4', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '20 seconds'),
+        ('TXN-SEED-0022', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 456986000.00::numeric(19,2), 464987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #5', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '25 seconds'),
+        ('TXN-SEED-0023', 'TRANSFER', '100800000091', '100800000109', 1000000.00::numeric(19,2), 2000.00::numeric(19,2), 455984000.00::numeric(19,2), 465987000.00::numeric(19,2), -2000.00::numeric(19,2), 'Hà Nội', 'Chuyển khoản nhanh lô #6', CURRENT_TIMESTAMP - INTERVAL '2 days' + INTERVAL '30 seconds')
 ) AS v(ref_no, tx_type, src_acc_num, tgt_acc_num, amount, fee, src_bal_after, tgt_bal_after, sys_delta, location, description, created_at)
 LEFT JOIN core.account src ON src.account_number = v.src_acc_num
 LEFT JOIN core.account tgt ON tgt.account_number = v.tgt_acc_num
+WHERE (v.src_acc_num IS NULL OR src.id IS NOT NULL)
+  AND (v.tgt_acc_num IS NULL OR tgt.id IS NOT NULL)
 ON CONFLICT (reference_no) DO NOTHING;
 
--- 4. Synchronize sequences idempotently so newly generated codes/numbers never collide with seed baseline
+-- 4. Synchronize sequences dynamically and idempotently so newly generated codes/numbers never collide with existing or seeded data
 DO $$
+DECLARE
+    max_cust_seq BIGINT;
+    max_acc_seq  BIGINT;
 BEGIN
-    PERFORM setval('core.customer_code_seq', GREATEST((SELECT last_value FROM core.customer_code_seq), 20), true);
-    PERFORM setval('core.account_number_seq', GREATEST((SELECT last_value FROM core.account_number_seq), 12), true);
+    SELECT COALESCE(MAX(CAST(SUBSTRING(customer_code FROM 4) AS BIGINT) - 8000000), 0)
+      INTO max_cust_seq
+      FROM core.customer
+     WHERE customer_code ~ '^CUS[0-9]+$';
+
+    SELECT COALESCE(MAX(CAST(SUBSTRING(account_number FROM 4 FOR 8) AS BIGINT) - 80000000), 0)
+      INTO max_acc_seq
+      FROM core.account
+     WHERE account_number ~ '^100[0-9]{9}$';
+
+    PERFORM setval(
+        'core.customer_code_seq',
+        GREATEST((SELECT last_value FROM core.customer_code_seq), max_cust_seq, 20),
+        true
+    );
+    PERFORM setval(
+        'core.account_number_seq',
+        GREATEST((SELECT last_value FROM core.account_number_seq), max_acc_seq, 12),
+        true
+    );
 END $$;
 
+-- 5. Seed synthetic CUSTOMER login accounts (default demo password: Customer@123 hashed with BCrypt strength 10)
+INSERT INTO core.app_user (
+    username, password_hash, role, customer_id, enabled, created_at
+)
+SELECT v.username, v.password_hash, 'CUSTOMER', c.id, TRUE, v.created_at
+FROM (
+    VALUES
+        ('cust.an', '$2a$10$3CQZNBArpgzgErJJdek7LuIOynWuxt9ELxJSkKVk6gxjvlQXNhMty', 'CUS8000001', CURRENT_TIMESTAMP - INTERVAL '340 days'),
+        ('cust.binh', '$2a$10$3CQZNBArpgzgErJJdek7LuIOynWuxt9ELxJSkKVk6gxjvlQXNhMty', 'CUS8000002', CURRENT_TIMESTAMP - INTERVAL '320 days')
+) AS v(username, password_hash, cust_code, created_at)
+JOIN core.customer c ON c.customer_code = v.cust_code
+ON CONFLICT (username) DO NOTHING;
+
+-- 6. Seed synthetic anomaly alerts for TXN-SEED-0017 (AMOUNT_THRESHOLD) and TXN-SEED-0023 (VELOCITY)
+-- so GET /api/v1/alerts is immediately populated on fresh demo startup (L3-03, L3-04, Story 5.6)
+INSERT INTO core.alert (
+    transaction_id, account_id, rule_code, severity, reason, status, created_at
+)
+SELECT t.id, t.source_account_id, v.rule_code, v.severity, v.reason, 'NEW', t.created_at
+FROM (
+    VALUES
+        ('TXN-SEED-0017', 'AMOUNT_THRESHOLD', 'HIGH', 'Outgoing transaction amount 75000000.00 VND meets or exceeds threshold 50000000.00 VND'),
+        ('TXN-SEED-0023', 'VELOCITY', 'MEDIUM', 'Account exceeded velocity threshold: 6 outgoing transactions within 60 seconds (max 5)')
+) AS v(ref_no, rule_code, severity, reason)
+JOIN core.transaction t ON t.reference_no = v.ref_no
+WHERE t.source_account_id IS NOT NULL
+ON CONFLICT (transaction_id, rule_code) DO NOTHING;

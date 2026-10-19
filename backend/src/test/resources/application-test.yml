@@ -14,3 +14,7 @@ spring:
 
 app:
   business-zone: Asia/Ho_Chi_Minh
+  recurring:
+    scheduler-enabled: false
+    batch-size: 50
+    max-failures: 3

@@ -76,6 +76,11 @@ public class OpenApiConfig {
                 .tags(
                         List.of(
                                 new Tag()
+                                        .name("Authentication")
+                                        .description(
+                                                "Xác thực người dùng và phát hành JWT Access Token"
+                                                        + " (HS256)"),
+                                new Tag()
                                         .name("Customer")
                                         .description("Quản lý thông tin và hồ sơ khách hàng"),
                                 new Tag()
@@ -114,7 +119,48 @@ public class OpenApiConfig {
                                                     + " <token>"))
                     .addSchemas("ValidationError", createValidationErrorSchema())
                     .addSchemas("ProblemDetail", createProblemDetailSchema());
+
+            if (openApi.getTags() != null) {
+                openApi.setTags(
+                        openApi.getTags().stream()
+                                .filter(t -> !"Reports".equals(t.getName()))
+                                .toList());
+            }
+            if (openApi.getPaths() != null) {
+                openApi.getPaths()
+                        .values()
+                        .forEach(
+                                pathItem ->
+                                        pathItem.readOperations()
+                                                .forEach(OpenApiConfig::sanitizeOperation));
+            }
         };
+    }
+
+    private static void sanitizeOperation(io.swagger.v3.oas.models.Operation op) {
+        if (op.getTags() != null) {
+            op.setTags(
+                    op.getTags().stream()
+                            .map(tag -> "Reports".equals(tag) ? "Report" : tag)
+                            .distinct()
+                            .toList());
+        }
+        if (op.getSummary() != null) {
+            op.setSummary(stripInternalCodes(op.getSummary()));
+        }
+        if (op.getDescription() != null) {
+            op.setDescription(stripInternalCodes(op.getDescription()));
+        }
+    }
+
+    static String stripInternalCodes(String text) {
+        if (text == null) {
+            return null;
+        }
+        return text.replaceAll(
+                        "\\s*\\((?:L[123]-\\d+|FR-\\d+|NFR-\\d+|G-\\d+|NC-\\d+|ADR-\\d+|Story\\s+\\d+\\.\\d+|AC\\s*\\d+)[^)]*\\)",
+                        "")
+                .trim();
     }
 
     private Schema<?> createValidationErrorSchema() {

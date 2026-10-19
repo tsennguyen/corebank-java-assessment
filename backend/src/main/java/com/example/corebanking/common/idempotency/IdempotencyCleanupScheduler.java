@@ -26,8 +26,10 @@ public class IdempotencyCleanupScheduler {
         this.clock = clock;
     }
 
-    /** Runs every day at 03:00 AM (default) to purge expired keys. */
-    @Scheduled(cron = "${app.idempotency.cleanup-cron:0 0 3 * * *}")
+    /** Runs every day at 03:00 AM (default) in business timezone to purge expired keys. */
+    @Scheduled(
+            cron = "${app.idempotency.cleanup-cron:0 0 3 * * *}",
+            zone = "${app.business-zone:Asia/Ho_Chi_Minh}")
     @Transactional
     public void cleanupExpiredKeys() {
         int deleted = idempotencyRepository.deleteExpiredKeys(clock.instant());

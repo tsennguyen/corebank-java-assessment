@@ -73,8 +73,136 @@ class DeploymentConfigTest {
                 .contains("${DATABASE_URL:${SPRING_DATASOURCE_URL}}")
                 .contains("maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}")
                 .contains("connection-timeout: 5000")
-                .contains("lock_timeout=3000")
-                .contains("classpath:db/migration,classpath:db/seed");
+                .doesNotContain("options: \"-c lock_timeout=3000\"")
+                .contains("${FLYWAY_LOCATIONS:classpath:db/migration}");
+
+        ClassPathResource baseConfig = new ClassPathResource("application.yml");
+        String baseYaml = baseConfig.getContentAsString(StandardCharsets.UTF_8);
+        assertThat(baseYaml).contains("SET lock_timeout = '3s'");
+    }
+
+    @Test
+    @DisplayName(
+            "coverage-pages.yml, security.yml, and dependabot.yml enforce >=80% JaCoCo GitHub Pages"
+                + " report, CodeQL SAST, Dependency Review, and weekly Dependabot updates (Story"
+                + " 5.1 & 6.4: G-04, NC-04, NC-05, NC-13)")
+    void coveragePagesAndSecurityWorkflows_shouldEnforceJaCoCoGateCodeQlAndDependabot()
+            throws Exception {
+        Path coverageWorkflowPath = resolveRepoRootFile(".github/workflows/coverage-pages.yml");
+        String coverageWorkflow = Files.readString(coverageWorkflowPath, StandardCharsets.UTF_8);
+
+        assertThat(coverageWorkflow)
+                .contains("Publish JaCoCo Coverage Report to GitHub Pages")
+                .contains("pages: write")
+                .contains("id-token: write")
+                .contains("cache-dependency-path: 'backend/pom.xml'")
+                .contains("./mvnw -B verify -Pci")
+                .contains("actions/upload-pages-artifact@v3")
+                .contains("backend/target/site/jacoco")
+                .contains("actions/deploy-pages@v4");
+
+        Path securityWorkflowPath = resolveRepoRootFile(".github/workflows/security.yml");
+        String securityWorkflow = Files.readString(securityWorkflowPath, StandardCharsets.UTF_8);
+
+        assertThat(securityWorkflow)
+                .contains("Security Scanning (CodeQL & Dependency Review)")
+                .contains("security-events: write")
+                .contains("github/codeql-action/init@v3")
+                .contains("languages: java-kotlin")
+                .contains("github/codeql-action/analyze@v3")
+                .contains("actions/dependency-review-action@v4")
+                .contains("fail-on-severity: high");
+
+        Path dependabotPath = resolveRepoRootFile(".github/dependabot.yml");
+        String dependabot = Files.readString(dependabotPath, StandardCharsets.UTF_8);
+
+        assertThat(dependabot)
+                .contains("package-ecosystem: \"maven\"")
+                .contains("directory: \"/backend\"")
+                .contains("package-ecosystem: \"github-actions\"")
+                .contains("target-branch: \"dev\"")
+                .contains("interval: \"weekly\"")
+                .contains("dependencies");
+    }
+
+    @Test
+    @DisplayName(
+            "Operations Console static assets should be synchronized between frontend/ and"
+                    + " classpath:/static/ and wire all Level 1-3 API endpoints")
+    void shouldPackageSynchronizedOperationsConsoleAssets() throws Exception {
+        String frontendHtml =
+                Files.readString(
+                        resolveRepoRootFile("frontend/index.html"), StandardCharsets.UTF_8);
+        String staticHtml =
+                Files.readString(
+                        resolveBackendFile("src/main/resources/static/index.html"),
+                        StandardCharsets.UTF_8);
+        String frontendJs =
+                Files.readString(resolveRepoRootFile("frontend/app.js"), StandardCharsets.UTF_8);
+        String staticJs =
+                Files.readString(
+                        resolveBackendFile("src/main/resources/static/app.js"),
+                        StandardCharsets.UTF_8);
+
+        assertThat(staticHtml).isEqualTo(frontendHtml);
+        assertThat(staticJs).isEqualTo(frontendJs);
+        assertThat(frontendHtml)
+                .contains("Core Banking System — Operations Console")
+                .contains("quickLogin('admin'")
+                .contains("quickLogin('cust.an'")
+                .contains("quickLogin('cust.binh'")
+                .contains("previewFee()")
+                .contains("submitTransaction()")
+                .contains("runHistoricalFraudScan()")
+                .contains("exportFile('XLSX')")
+                .contains("exportFile('PDF')");
+        assertThat(frontendJs)
+                .contains("function esc(")
+                .contains("/api/v1/auth/login")
+                .contains("/api/v1/auth/refresh")
+                .contains("/api/v1/fees/preview")
+                .contains("/api/v1/statistics/balance-tiers")
+                .contains("/api/v1/statistics/customers-by-location")
+                .contains("/api/v1/reports/transactions")
+                .contains("/api/v1/reports/trends")
+                .contains("/api/v1/reports/export")
+                .contains("/api/v1/alerts")
+                .contains("/api/v1/fraud/scans")
+                .contains("Idempotent-Replayed");
+    }
+
+    @Test
+    @DisplayName(
+            "Performance benchmark suite should include cloud-guarded 1M-row seed SQL, k6 script,"
+                    + " and EXPLAIN ANALYZE results")
+    void shouldProvideLargeSeedK6AndBenchmarkResults() throws Exception {
+        String seedSql =
+                Files.readString(
+                        resolveRepoRootFile("perf/seed-large.sql"), StandardCharsets.UTF_8);
+        String k6Script =
+                Files.readString(
+                        resolveRepoRootFile("perf/k6-transactions-search.js"),
+                        StandardCharsets.UTF_8);
+        String resultsMd =
+                Files.readString(resolveRepoRootFile("perf/RESULTS.md"), StandardCharsets.UTF_8);
+
+        assertThat(seedSql)
+                .contains("SAFETY ABORT")
+                .contains("supabase_admin")
+                .contains("generate_series(1, 10000)")
+                .contains("generate_series(1, 1000000)")
+                .contains("VACUUM ANALYZE core.transaction");
+        assertThat(k6Script)
+                .contains("search_indexed")
+                .contains("recent_cached")
+                .contains("/api/v1/transactions")
+                .contains("/api/v1/accounts/");
+        assertThat(resultsMd)
+                .contains("121.007 ms")
+                .contains("0.937 ms")
+                .contains("0.179 ms")
+                .contains("Index Only Scan")
+                .contains("Heap Fetches: 0");
     }
 
     private static Path resolveBackendFile(String relativePath) {

@@ -12,6 +12,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.OwnershipGuard;
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.PageResponse;
 import com.example.corebanking.common.api.RequestIdFilter;
@@ -43,16 +45,26 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(TransactionController.class)
-@Import({ClockConfig.class, GlobalExceptionHandler.class, RequestIdFilter.class})
+@Import({
+    ClockConfig.class,
+    GlobalExceptionHandler.class,
+    RequestIdFilter.class,
+    SecurityConfig.class
+})
+@WithMockUser(roles = "ADMIN")
 class TransactionControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
 
     @MockBean private TransactionService transactionService;
+
+    @MockBean(name = "ownership")
+    private OwnershipGuard ownershipGuard;
 
     private TransactionResponse createDepositResponse(Long id, Long accountId, BigDecimal amount) {
         return new TransactionResponse(
@@ -622,6 +634,28 @@ class TransactionControllerTest {
                                                     "has already been used with a different"
                                                             + " request payload")));
         }
+
+        @Test
+        @DisplayName("returns 400 with VALIDATION_FAILED when Idempotency-Key exceeds 128 chars")
+        void deposit_whenIdempotencyKeyExceeds128Chars_shouldReturn400() throws Exception {
+            DepositRequest request =
+                    new DepositRequest(
+                            1L, new BigDecimal("100000.00"), "Hà Nội", "Key dài quá 128 ký tự");
+
+            mockMvc.perform(
+                            post("/api/v1/transactions/deposits")
+                                    .header("Idempotency-Key", "k".repeat(129))
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(
+                            jsonPath("$.detail")
+                                    .value(
+                                            "Header 'Idempotency-Key' must not exceed 128"
+                                                    + " characters"));
+        }
     }
 
     // ==========================================
@@ -673,6 +707,71 @@ class TransactionControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.content", hasSize(1)))
                     .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        @DisplayName(
+                "GET /api/v1/transactions binds all advanced filter parameters (minAmount,"
+                        + " maxAmount, type, status, fromDate, toDate, sort) (AC 1, L2-03, L2-04)")
+        void searchTransactions_withAllAdvancedFilters_shouldBindCriteriaAndReturn200()
+                throws Exception {
+            TransactionResponse response =
+                    createTransferResponse(
+                            10L, 1L, 2L, new BigDecimal("2500000.00"), new BigDecimal("2000.00"));
+            PageResponse<TransactionResponse> pageResponse =
+                    new PageResponse<>(List.of(response), 0, 10, 1L, 1);
+
+            TransactionSearchCriteria expectedCriteria =
+                    new TransactionSearchCriteria(
+                            1L,
+                            TransactionType.TRANSFER,
+                            TransactionStatus.COMPLETED,
+                            new BigDecimal("1000000"),
+                            new BigDecimal("5000000"),
+                            java.time.LocalDate.of(2026, 9, 1),
+                            java.time.LocalDate.of(2026, 9, 30));
+
+            when(transactionService.searchTransactions(
+                            org.mockito.ArgumentMatchers.eq(expectedCriteria), any(Pageable.class)))
+                    .thenReturn(pageResponse);
+
+            mockMvc.perform(
+                            get(
+                                    "/api/v1/transactions?accountId=1&type=TRANSFER&status=COMPLETED"
+                                        + "&minAmount=1000000&maxAmount=5000000"
+                                        + "&fromDate=2026-09-01&toDate=2026-09-30"
+                                        + "&page=0&size=10&sort=amount,desc"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content", hasSize(1)))
+                    .andExpect(jsonPath("$.content[0].type").value("TRANSFER"))
+                    .andExpect(jsonPath("$.content[0].amount").value(2500000.00))
+                    .andExpect(jsonPath("$.totalElements").value(1));
+        }
+
+        @Test
+        @DisplayName(
+                "GET /api/v1/transactions returns 400 VALIDATION_FAILED when fromDate is malformed")
+        void searchTransactions_whenMalformedFromDate_shouldReturn400() throws Exception {
+            mockMvc.perform(get("/api/v1/transactions?fromDate=2026-13-45"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        }
+
+        @Test
+        @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+        @DisplayName(
+                "GET /api/v1/transactions returns 403 ACCESS_DENIED when CUSTOMER filters by"
+                        + " foreign accountId (AC 3, L2-01)")
+        void searchTransactions_whenCustomerPassesForeignAccountId_shouldReturn403()
+                throws Exception {
+            when(ownershipGuard.canAccessAccount(any(), org.mockito.ArgumentMatchers.eq(999L)))
+                    .thenReturn(false);
+
+            mockMvc.perform(get("/api/v1/transactions?accountId=999"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.status").value(403))
+                    .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         }
     }
 
@@ -746,6 +845,28 @@ class TransactionControllerTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.status").value(400))
                     .andExpect(jsonPath("$.code").value("IMMUTABLE_FIELD"));
+        }
+
+        @Test
+        @DisplayName(
+                "PATCH /api/v1/transactions/{id} captures extended immutable fields (status,"
+                        + " currency, systemBalanceDelta) via @JsonAnySetter")
+        void updateTransaction_withExtendedImmutableFields_shouldFlagHasImmutableFields()
+                throws Exception {
+            String rawPayload =
+                    """
+                    {
+                        "description": "Desc",
+                        "status": "REVERSED",
+                        "currency": "USD"
+                    }
+                    """;
+            UpdateTransactionRequest parsed =
+                    objectMapper.readValue(rawPayload, UpdateTransactionRequest.class);
+            org.assertj.core.api.Assertions.assertThatThrownBy(parsed::validateImmutability)
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.IMMUTABLE_FIELD);
         }
 
         @Test
@@ -844,6 +965,23 @@ class TransactionControllerTest {
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.status").value(404))
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        }
+
+        @Test
+        @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+        @DisplayName(
+                "GET /api/v1/transactions/{id} returns 403 ACCESS_DENIED when CUSTOMER accesses"
+                        + " unrelated transaction (AC 4)")
+        void
+                getTransactionById_whenCustomerAccessesUnrelatedTransaction_shouldReturn403ProblemDetail()
+                        throws Exception {
+            when(ownershipGuard.canAccessTransaction(any(), org.mockito.ArgumentMatchers.eq(888L)))
+                    .thenReturn(false);
+
+            mockMvc.perform(get("/api/v1/transactions/888"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.status").value(403))
+                    .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
         }
     }
 }

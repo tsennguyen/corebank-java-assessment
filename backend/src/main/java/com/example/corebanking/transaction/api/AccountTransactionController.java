@@ -16,6 +16,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -34,6 +35,7 @@ public class AccountTransactionController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessAccount(authentication, #id)")
     @Operation(
             summary = "Lấy lịch sử giao dịch của tài khoản",
             description =
@@ -49,6 +51,10 @@ public class AccountTransactionController {
                 description = "Trường sắp xếp không hợp lệ hoặc kích thước trang vượt quá 100",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền xem giao dịch của tài khoản khách hàng khác",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
                 responseCode = "404",
                 description = "Không tìm thấy tài khoản",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
@@ -60,5 +66,70 @@ public class AccountTransactionController {
                     @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
                     Pageable pageable) {
         return ResponseEntity.ok(transactionService.getAccountTransactions(id, pageable));
+    }
+
+    @GetMapping("/cursor")
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessAccount(authentication, #id)")
+    @Operation(
+            summary = "Lấy lịch sử giao dịch của tài khoản theo Keyset Pagination (Cursor)",
+            description =
+                    "Phân trang theo con trỏ (createdAt DESC, id DESC) giữ độ trễ O(log N) ổn định"
+                            + " ở mọi trang sâu mà không dùng OFFSET (Story 6.1).")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "200",
+                description = "Danh sách giao dịch theo con trỏ thành công",
+                content =
+                        @Content(
+                                schema =
+                                        @Schema(
+                                                implementation =
+                                                        com.example.corebanking.common.api
+                                                                .CursorPageResponse.class))),
+        @ApiResponse(
+                responseCode = "400",
+                description = "Cursor không hợp lệ (INVALID_CURSOR) hoặc size ngoài khoảng 1..100",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền xem giao dịch của tài khoản khách hàng khác",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "404",
+                description = "Không tìm thấy tài khoản",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<
+                    com.example.corebanking.common.api.CursorPageResponse<TransactionResponse>>
+            getAccountTransactionsByCursor(
+                    @Parameter(description = "ID nội bộ của tài khoản", example = "1") @PathVariable
+                            Long id,
+                    @Parameter(
+                                    description =
+                                            "Con trỏ Base64URL (createdAt|id) từ trang trước; bỏ"
+                                                    + " trống ở trang đầu")
+                            @org.springframework.web.bind.annotation.RequestParam(required = false)
+                            String cursor,
+                    @Parameter(description = "Kích thước trang (1..100)", example = "50")
+                            @org.springframework.web.bind.annotation.RequestParam(
+                                    defaultValue = "20")
+                            int size) {
+        return ResponseEntity.ok(
+                transactionService.getAccountTransactionsByCursor(id, cursor, size));
+    }
+
+    @GetMapping(params = "cursor")
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessAccount(authentication, #id)")
+    @Operation(hidden = true)
+    public ResponseEntity<
+                    com.example.corebanking.common.api.CursorPageResponse<TransactionResponse>>
+            getAccountTransactionsWithCursorParam(
+                    @PathVariable Long id,
+                    @org.springframework.web.bind.annotation.RequestParam(required = false)
+                            String cursor,
+                    @org.springframework.web.bind.annotation.RequestParam(defaultValue = "20")
+                            int size) {
+        return ResponseEntity.ok(
+                transactionService.getAccountTransactionsByCursor(id, cursor, size));
     }
 }

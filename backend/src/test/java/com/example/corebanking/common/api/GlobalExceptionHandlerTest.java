@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.config.ClockConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.DuplicateResourceException;
@@ -24,6 +25,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,8 +38,10 @@ import org.springframework.web.bind.annotation.RestController;
     GlobalExceptionHandlerTest.TestErrorController.class,
     GlobalExceptionHandler.class,
     RequestIdFilter.class,
-    ClockConfig.class
+    ClockConfig.class,
+    SecurityConfig.class
 })
+@WithMockUser(roles = "ADMIN")
 class GlobalExceptionHandlerTest {
 
     @Autowired private MockMvc mockMvc;
@@ -182,6 +186,53 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.requestId").value(customId));
     }
 
+    @Test
+    @DisplayName(
+            "should return 403 ProblemDetail with ACCESS_DENIED on AccessDeniedException and 401"
+                    + " UNAUTHORIZED with WWW-Authenticate on AuthenticationException")
+    void securityExceptions_return403And401ProblemDetail() throws Exception {
+        mockMvc.perform(get("/api/v1/test-errors/access-denied"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+
+        mockMvc.perform(get("/api/v1/test-errors/auth-failed"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(
+                        header().string(
+                                        org.springframework.http.HttpHeaders.WWW_AUTHENTICATE,
+                                        "Bearer"))
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName(
+            "should return 400 VALIDATION_FAILED on SQLState 23514 check violation and 409"
+                    + " DUPLICATE_RESOURCE on SQLState 23505")
+    void dataIntegrityViolation_classifiesBySqlState() throws Exception {
+        mockMvc.perform(get("/api/v1/test-errors/data-integrity-check"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        mockMvc.perform(get("/api/v1/test-errors/data-integrity-unique"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("DUPLICATE_RESOURCE"));
+    }
+
+    @Test
+    @DisplayName("should return 409 LOCK_TIMEOUT when QueryTimeoutException is thrown")
+    void queryTimeoutException_returns409WithLockTimeout() throws Exception {
+        mockMvc.perform(get("/api/v1/test-errors/query-timeout"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.code").value("LOCK_TIMEOUT"));
+    }
+
     @RestController
     @RequestMapping("/api/v1/test-errors")
     static class TestErrorController {
@@ -213,9 +264,39 @@ class GlobalExceptionHandlerTest {
             throw new CannotAcquireLockException("canceling statement due to lock timeout");
         }
 
+        @GetMapping("/query-timeout")
+        public String testQueryTimeout() {
+            throw new org.springframework.dao.QueryTimeoutException("statement timeout");
+        }
+
+        @GetMapping("/data-integrity-check")
+        public String testDataIntegrityCheck() {
+            throw new org.springframework.dao.DataIntegrityViolationException(
+                    "check constraint violation",
+                    new java.sql.SQLException("violates check constraint", "23514"));
+        }
+
+        @GetMapping("/data-integrity-unique")
+        public String testDataIntegrityUnique() {
+            throw new org.springframework.dao.DataIntegrityViolationException(
+                    "unique constraint violation",
+                    new java.sql.SQLException("duplicate key value", "23505"));
+        }
+
         @GetMapping("/internal-error")
         public String testInternalError() {
             throw new RuntimeException("Sensitive database stack trace details");
+        }
+
+        @GetMapping("/access-denied")
+        public String testAccessDenied() {
+            throw new org.springframework.security.access.AccessDeniedException("Forbidden");
+        }
+
+        @GetMapping("/auth-failed")
+        public String testAuthFailed() {
+            throw new org.springframework.security.authentication.BadCredentialsException(
+                    "Invalid token");
         }
     }
 

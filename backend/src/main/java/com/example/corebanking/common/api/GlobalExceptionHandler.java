@@ -3,6 +3,7 @@ package com.example.corebanking.common.api;
 import com.example.corebanking.common.domain.DomainException;
 import com.example.corebanking.common.domain.ErrorCode;
 import java.net.URI;
+import java.sql.SQLException;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.PessimisticLockingFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -77,8 +79,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         List<ValidationError> validationErrors = new ArrayList<>();
 
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
-            validationErrors.add(
-                    new ValidationError(fieldError.getField(), fieldError.getDefaultMessage()));
+            String message =
+                    fieldError.isBindingFailure()
+                            ? "Invalid value for field '" + fieldError.getField() + "'"
+                            : fieldError.getDefaultMessage();
+            validationErrors.add(new ValidationError(fieldError.getField(), message));
         }
 
         ProblemDetail problemDetail =
@@ -254,9 +259,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     }
 
     /** Handles pessimistic locking and database lock acquisition timeouts. */
-    @ExceptionHandler(PessimisticLockingFailureException.class)
+    @ExceptionHandler({PessimisticLockingFailureException.class, QueryTimeoutException.class})
     public ResponseEntity<ProblemDetail> handlePessimisticLockingFailure(
-            PessimisticLockingFailureException ex, WebRequest request) {
+            Exception ex, WebRequest request) {
         String requestId = RequestIdFilter.getCurrentRequestId();
         ErrorCode errorCode = ErrorCode.LOCK_TIMEOUT;
         HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
@@ -281,14 +286,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<ProblemDetail> handleDataIntegrityViolation(
             DataIntegrityViolationException ex, WebRequest request) {
         String requestId = RequestIdFilter.getCurrentRequestId();
-        ErrorCode errorCode = ErrorCode.DUPLICATE_RESOURCE;
-        HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
+        String sqlState = extractSqlState(ex);
 
-        ProblemDetail problemDetail =
-                ProblemDetail.forStatusAndDetail(
-                        status,
-                        "Data integrity constraint violated: resource or unique field already"
-                                + " exists.");
+        ErrorCode errorCode = ErrorCode.DUPLICATE_RESOURCE;
+        String detailMessage =
+                "Data integrity constraint violated: resource or unique field already exists.";
+        if ("22001".equals(sqlState)
+                || "22003".equals(sqlState)
+                || "23502".equals(sqlState)
+                || "23514".equals(sqlState)) {
+            errorCode = ErrorCode.VALIDATION_FAILED;
+            detailMessage = "Data constraint or value range violation in request payload.";
+        }
+
+        HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detailMessage);
         problemDetail.setTitle(errorCode.getDefaultTitle());
         problemDetail.setType(URI.create(errorCode.getProblemTypeUri()));
         problemDetail.setInstance(resolveInstanceUri(request));
@@ -296,8 +308,69 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
         problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
 
-        log.warn("Data integrity conflict [requestId={}]: {}", requestId, ex.getMessage());
+        log.warn(
+                "Data integrity violation [requestId={}, sqlState={}]: {}",
+                requestId,
+                sqlState,
+                ex.getMessage());
         return ResponseEntity.status(status).body(problemDetail);
+    }
+
+    private String extractSqlState(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLException sqlEx && sqlEx.getSQLState() != null) {
+                return sqlEx.getSQLState();
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    /** Handles Spring Security method-level access denied exceptions (403 ACCESS_DENIED). */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleAccessDeniedException(
+            org.springframework.security.access.AccessDeniedException ex, WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        ErrorCode errorCode = ErrorCode.ACCESS_DENIED;
+        HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        status, "You do not have permission to access this resource");
+        problemDetail.setTitle(errorCode.getDefaultTitle());
+        problemDetail.setType(URI.create(errorCode.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, errorCode.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+
+        log.warn("Access denied [requestId={}]: {}", requestId, ex.getMessage());
+        return ResponseEntity.status(status).body(problemDetail);
+    }
+
+    /** Handles Spring Security authentication exceptions (401 UNAUTHORIZED). */
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<ProblemDetail> handleAuthenticationException(
+            org.springframework.security.core.AuthenticationException ex, WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        ErrorCode errorCode = ErrorCode.UNAUTHORIZED;
+        HttpStatus status = HttpStatus.valueOf(errorCode.getHttpStatus());
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        status, "Authentication is required to access this resource");
+        problemDetail.setTitle(errorCode.getDefaultTitle());
+        problemDetail.setType(URI.create(errorCode.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, errorCode.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+
+        log.warn("Authentication failed [requestId={}]: {}", requestId, ex.getMessage());
+        return ResponseEntity.status(status)
+                .header(HttpHeaders.WWW_AUTHENTICATE, "Bearer")
+                .body(problemDetail);
     }
 
     /** Catches and secures all unexpected exceptions, preventing stack trace leaks. */
@@ -332,5 +405,45 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             return URI.create(servletWebRequest.getRequest().getRequestURI());
         }
         return URI.create("about:blank");
+    }
+
+    /** Handles login rate limit violations (429 TOO_MANY_REQUESTS) with RFC Retry-After header. */
+    @ExceptionHandler(com.example.corebanking.auth.domain.RateLimitExceededException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimitExceededException(
+            com.example.corebanking.auth.domain.RateLimitExceededException ex, WebRequest request) {
+        ResponseEntity<ProblemDetail> response = handleDomainException(ex, request);
+        return ResponseEntity.status(response.getStatusCode())
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.getRetryAfterSeconds()))
+                .body(response.getBody());
+    }
+
+    /** Handles missing required query parameters (@RequestParam). */
+    @Override
+    protected ResponseEntity<Object> handleMissingServletRequestParameter(
+            org.springframework.web.bind.MissingServletRequestParameterException ex,
+            HttpHeaders headers,
+            HttpStatusCode status,
+            WebRequest request) {
+        String requestId = RequestIdFilter.getCurrentRequestId();
+        List<ValidationError> validationErrors =
+                List.of(
+                        new ValidationError(
+                                ex.getParameterName(),
+                                "Required parameter '" + ex.getParameterName() + "' is missing"));
+
+        ProblemDetail problemDetail =
+                ProblemDetail.forStatusAndDetail(
+                        HttpStatus.BAD_REQUEST,
+                        "Required parameter '" + ex.getParameterName() + "' is not present");
+        problemDetail.setTitle(ErrorCode.VALIDATION_FAILED.getDefaultTitle());
+        problemDetail.setType(URI.create(ErrorCode.VALIDATION_FAILED.getProblemTypeUri()));
+        problemDetail.setInstance(resolveInstanceUri(request));
+        problemDetail.setProperty(PROPERTY_CODE, ErrorCode.VALIDATION_FAILED.name());
+        problemDetail.setProperty(PROPERTY_REQUEST_ID, requestId);
+        problemDetail.setProperty(PROPERTY_TIMESTAMP, clock.instant());
+        problemDetail.setProperty(PROPERTY_ERRORS, validationErrors);
+
+        log.warn("Missing request parameter [requestId={}]: {}", requestId, ex.getParameterName());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).headers(headers).body(problemDetail);
     }
 }

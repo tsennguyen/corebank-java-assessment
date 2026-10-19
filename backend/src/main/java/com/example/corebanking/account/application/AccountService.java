@@ -1,38 +1,58 @@
 package com.example.corebanking.account.application;
 
 import com.example.corebanking.account.api.dto.AccountResponse;
+import com.example.corebanking.account.api.dto.AccountStatusHistoryResponse;
+import com.example.corebanking.account.api.dto.ChangeAccountStatusRequest;
 import com.example.corebanking.account.api.dto.CreateAccountRequest;
 import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.domain.Account;
 import com.example.corebanking.account.domain.AccountStatus;
+import com.example.corebanking.account.domain.AccountStatusHistory;
 import com.example.corebanking.account.domain.BalanceTierPolicy;
+import com.example.corebanking.account.domain.event.AccountLimitsUpdatedEvent;
+import com.example.corebanking.account.domain.event.AccountStatusChangedEvent;
 import com.example.corebanking.account.infrastructure.AccountNumberGenerator;
 import com.example.corebanking.account.infrastructure.AccountRepository;
 import com.example.corebanking.account.infrastructure.AccountSpecifications;
+import com.example.corebanking.account.infrastructure.AccountStatusHistoryRepository;
 import com.example.corebanking.common.api.PageResponse;
+import com.example.corebanking.common.config.CacheConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
 import com.example.corebanking.customer.infrastructure.CustomerRepository;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Application service managing Account opening, limits adjustment, search, and closure. */
+/**
+ * Application service managing Account opening, limits adjustment, status lifecycle transitions,
+ * search, and closure.
+ */
 @Service
 @Transactional(readOnly = true)
 public class AccountService {
 
     private static final Logger log = LoggerFactory.getLogger(AccountService.class);
+    private static final String DEFAULT_ACTOR = "SYSTEM";
+    private static final String ACCOUNT_OPENED_REASON = "Account opened";
+    private static final String ACCOUNT_CLOSED_REASON = "Account closed";
     private static final Set<String> ALLOWED_SORT_FIELDS =
             Set.of("id", "accountNumber", "balance", "openedDate", "status", "createdAt");
 
@@ -41,6 +61,9 @@ public class AccountService {
     private final AccountNumberGenerator accountNumberGenerator;
     private final BalanceTierPolicy balanceTierPolicy;
     private final Clock clock;
+    private final AccountStatusHistoryRepository statusHistoryRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final List<AccountClosureGuard> accountClosureGuards;
 
     public AccountService(
             AccountRepository accountRepository,
@@ -48,22 +71,69 @@ public class AccountService {
             AccountNumberGenerator accountNumberGenerator,
             BalanceTierPolicy balanceTierPolicy,
             Clock clock) {
+        this(
+                accountRepository,
+                customerRepository,
+                accountNumberGenerator,
+                balanceTierPolicy,
+                clock,
+                null,
+                null,
+                List.of());
+    }
+
+    public AccountService(
+            AccountRepository accountRepository,
+            CustomerRepository customerRepository,
+            AccountNumberGenerator accountNumberGenerator,
+            BalanceTierPolicy balanceTierPolicy,
+            Clock clock,
+            AccountStatusHistoryRepository statusHistoryRepository,
+            ApplicationEventPublisher eventPublisher) {
+        this(
+                accountRepository,
+                customerRepository,
+                accountNumberGenerator,
+                balanceTierPolicy,
+                clock,
+                statusHistoryRepository,
+                eventPublisher,
+                List.of());
+    }
+
+    @Autowired
+    public AccountService(
+            AccountRepository accountRepository,
+            CustomerRepository customerRepository,
+            AccountNumberGenerator accountNumberGenerator,
+            BalanceTierPolicy balanceTierPolicy,
+            Clock clock,
+            AccountStatusHistoryRepository statusHistoryRepository,
+            ApplicationEventPublisher eventPublisher,
+            List<AccountClosureGuard> accountClosureGuards) {
         this.accountRepository = accountRepository;
         this.customerRepository = customerRepository;
         this.accountNumberGenerator = accountNumberGenerator;
         this.balanceTierPolicy = balanceTierPolicy;
         this.clock = clock;
+        this.statusHistoryRepository = statusHistoryRepository;
+        this.eventPublisher = eventPublisher;
+        this.accountClosureGuards =
+                accountClosureGuards != null ? List.copyOf(accountClosureGuards) : List.of();
     }
 
     /**
-     * Opens a new account for an existing active customer.
+     * Opens a new account for an existing active customer and records the initial status history
+     * entry ({@code null -> ACTIVE}).
      *
      * @param request opening payload with customer ID and limits
      * @return created account details
      */
     @Transactional
     public AccountResponse createAccount(CreateAccountRequest request) {
-        if (customerRepository.findByIdAndDeletedAtIsNull(request.customerId()).isEmpty()) {
+        if (customerRepository
+                .findByIdAndDeletedAtIsNullForUpdate(request.customerId())
+                .isEmpty()) {
             throw new ResourceNotFoundException("Customer", request.customerId());
         }
 
@@ -89,6 +159,9 @@ public class AccountService {
                         openedDate);
 
         Account saved = accountRepository.save(account);
+        recordStatusChangeAndPublishEvent(
+                saved, null, AccountStatus.ACTIVE, ACCOUNT_OPENED_REASON, clock.instant());
+
         log.info(
                 "Opened account [id={}, number={}] for customer {}",
                 saved.getId(),
@@ -104,6 +177,41 @@ public class AccountService {
                         .findById(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Account", id));
         return AccountResponse.from(account, balanceTierPolicy.classify(account.getBalance()));
+    }
+
+    /**
+     * Retrieves all accounts owned by a specific customer ordered by ID descending (L2-01, L2-08,
+     * FR-14). Cached in {@code accountsByCustomer} and evicted after commit when account or balance
+     * changes occur.
+     */
+    @Cacheable(cacheNames = CacheConfig.ACCOUNTS_BY_CUSTOMER_CACHE, key = "#customerId")
+    public List<AccountResponse> getAccountsByCustomerId(Long customerId) {
+        return accountRepository.findByCustomerIdOrderByIdDesc(customerId).stream()
+                .map(
+                        account ->
+                                AccountResponse.from(
+                                        account, balanceTierPolicy.classify(account.getBalance())))
+                .toList();
+    }
+
+    /**
+     * Retrieves accounts owned by a specific customer filtered by optional status, ordered by ID
+     * descending (L2-01, L2-08, FR-14).
+     */
+    @Cacheable(
+            cacheNames = CacheConfig.ACCOUNTS_BY_CUSTOMER_CACHE,
+            key = "#customerId",
+            condition = "#status == null")
+    public List<AccountResponse> getAccountsByCustomerId(Long customerId, AccountStatus status) {
+        if (status == null) {
+            return getAccountsByCustomerId(customerId);
+        }
+        return accountRepository.findByCustomerIdAndStatusOrderByIdDesc(customerId, status).stream()
+                .map(
+                        account ->
+                                AccountResponse.from(
+                                        account, balanceTierPolicy.classify(account.getBalance())))
+                .toList();
     }
 
     /** Searches accounts matching filters with pagination and sorting. */
@@ -156,6 +264,11 @@ public class AccountService {
 
         account.updateLimits(request.transactionLimit(), request.dailyLimit());
         Account updated = accountRepository.saveAndFlush(account);
+        if (eventPublisher != null && updated.getCustomerId() != null) {
+            eventPublisher.publishEvent(
+                    new AccountLimitsUpdatedEvent(
+                            updated.getId(), updated.getCustomerId(), clock.instant()));
+        }
         log.info(
                 "Updated limits on account [id={}, number={}]",
                 updated.getId(),
@@ -179,27 +292,146 @@ public class AccountService {
         return PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sort);
     }
 
-    /** Closes an account if balance is zero. Throws ACCOUNT_HAS_BALANCE (409) if balance > 0. */
+    /**
+     * Transitions an account's status under pessimistic write lock, persists an immutable {@link
+     * AccountStatusHistory} audit record, and publishes {@link AccountStatusChangedEvent} (L2-05,
+     * FR-3).
+     *
+     * @param id account ID
+     * @param request target status and reason
+     * @return updated account response
+     */
+    @Transactional
+    public AccountResponse changeStatus(Long id, ChangeAccountStatusRequest request) {
+        Account account =
+                accountRepository
+                        .findByIdForUpdate(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Account", id));
+
+        AccountStatus fromStatus = account.getStatus();
+        Instant now = clock.instant();
+        String trimmedReason = request.reason().trim();
+
+        if (request.targetStatus() == AccountStatus.CLOSED) {
+            validateCanCloseAccount(account);
+        }
+        account.changeStatus(request.targetStatus(), now);
+        Account saved = accountRepository.save(account);
+        recordStatusChangeAndPublishEvent(
+                saved, fromStatus, request.targetStatus(), trimmedReason, now);
+
+        log.info(
+                "Changed account status [id={}, number={}, from={}, to={}, reason={}]",
+                saved.getId(),
+                saved.getAccountNumber(),
+                fromStatus,
+                request.targetStatus(),
+                trimmedReason);
+        return AccountResponse.from(saved, balanceTierPolicy.classify(saved.getBalance()));
+    }
+
+    /**
+     * Retrieves the complete status transition history for an account ordered by {@code changedAt
+     * DESC, id DESC} (L2-05, FR-3).
+     *
+     * @param id account ID
+     * @return list of status history entries (most recent first)
+     */
+    public List<AccountStatusHistoryResponse> getStatusHistory(Long id) {
+        if (!accountRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Account", id);
+        }
+        if (statusHistoryRepository == null) {
+            return List.of();
+        }
+        return statusHistoryRepository.findByAccountIdOrderByChangedAtDescIdDesc(id).stream()
+                .map(AccountStatusHistoryResponse::from)
+                .toList();
+    }
+
+    /**
+     * Closes an account if balance is zero and no active recurring transactions exist under
+     * pessimistic write lock, recording status history and publishing {@link
+     * AccountStatusChangedEvent}.
+     */
     @Transactional
     public void closeAccount(Long id) {
         Account account =
                 accountRepository
-                        .findById(id)
+                        .findByIdForUpdate(id)
                         .orElseThrow(() -> new ResourceNotFoundException("Account", id));
 
-        account.close(clock.instant());
-        accountRepository.save(account);
-        log.info("Closed account [id={}, number={}]", account.getId(), account.getAccountNumber());
+        AccountStatus fromStatus = account.getStatus();
+        Instant now = clock.instant();
+
+        validateCanCloseAccount(account);
+        account.close(now);
+        Account saved = accountRepository.save(account);
+        recordStatusChangeAndPublishEvent(
+                saved, fromStatus, AccountStatus.CLOSED, ACCOUNT_CLOSED_REASON, now);
+        log.info("Closed account [id={}, number={}]", saved.getId(), saved.getAccountNumber());
+    }
+
+    private void validateCanCloseAccount(Account account) {
+        if (!account.getStatus().canTransitionTo(AccountStatus.CLOSED)
+                || account.getBalance().signum() > 0) {
+            return;
+        }
+        for (AccountClosureGuard guard : accountClosureGuards) {
+            guard.validateCanCloseAccount(account.getId());
+        }
+    }
+
+    private void recordStatusChangeAndPublishEvent(
+            Account account,
+            AccountStatus fromStatus,
+            AccountStatus toStatus,
+            String reason,
+            Instant changedAt) {
+        if (account.getId() == null) {
+            return;
+        }
+        String changedBy = resolveCurrentActor();
+        if (statusHistoryRepository != null) {
+            statusHistoryRepository.save(
+                    new AccountStatusHistory(
+                            account.getId(), fromStatus, toStatus, reason, changedBy, changedAt));
+        }
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(
+                    new AccountStatusChangedEvent(
+                            account.getId(),
+                            account.getCustomerId(),
+                            fromStatus,
+                            toStatus,
+                            reason,
+                            changedBy,
+                            changedAt));
+        }
+    }
+
+    private String resolveCurrentActor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null
+                && authentication.isAuthenticated()
+                && authentication.getName() != null
+                && !authentication.getName().isBlank()
+                && !"anonymousUser".equals(authentication.getName())) {
+            return authentication.getName();
+        }
+        return DEFAULT_ACTOR;
     }
 
     private void validatePaginationAndSort(Pageable pageable) {
-        if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
-        }
-        if (pageable.getPageNumber() < 0) {
-            throw new BusinessRuleException(
-                    ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+        if (!pageable.isUnpaged()) {
+            if (pageable.getPageSize() > 100 || pageable.getPageSize() < 1) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
+            }
+            if (pageable.getPageNumber() < 0) {
+                throw new BusinessRuleException(
+                        ErrorCode.VALIDATION_FAILED, "Page number must not be negative");
+            }
         }
 
         for (Sort.Order order : pageable.getSort()) {

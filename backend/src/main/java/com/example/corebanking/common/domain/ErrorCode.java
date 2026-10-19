@@ -10,6 +10,7 @@ public enum ErrorCode {
     VALIDATION_FAILED(400, "Validation failed"),
     IDEMPOTENCY_KEY_MISSING(400, "Idempotency key missing"),
     INVALID_SORT_FIELD(400, "Invalid sort field"),
+    INVALID_CURSOR(400, "Invalid pagination cursor"),
     SAME_ACCOUNT_TRANSFER(400, "Source and destination accounts cannot be identical"),
     IMMUTABLE_FIELD(400, "Field is immutable and cannot be updated"),
 
@@ -28,6 +29,8 @@ public enum ErrorCode {
     INVALID_STATUS_TRANSITION(409, "Invalid status transition"),
     ALREADY_REVERSED(409, "Transaction has already been reversed"),
     ACCOUNT_HAS_BALANCE(409, "Account balance must be zero before closing"),
+    ACCOUNT_HAS_ACTIVE_RECURRING(
+            409, "Account has active recurring transactions and cannot be closed"),
     CUSTOMER_HAS_ACTIVE_ACCOUNTS(409, "Customer has active or open accounts and cannot be deleted"),
     LOCK_TIMEOUT(409, "Resource lock acquisition timed out"),
     CONCURRENT_MODIFICATION(409, "Concurrent modification conflict detected"),

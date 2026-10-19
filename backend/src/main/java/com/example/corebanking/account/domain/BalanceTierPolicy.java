@@ -15,6 +15,15 @@ public class BalanceTierPolicy {
     private final TreeMap<BigDecimal, BalanceTier> tierMap;
 
     public BalanceTierPolicy(BalanceTierProperties properties) {
+        if (properties == null
+                || properties.getMediumThreshold() == null
+                || properties.getHighThreshold() == null
+                || properties.getMediumThreshold().compareTo(BigDecimal.ZERO) <= 0
+                || properties.getHighThreshold().compareTo(properties.getMediumThreshold()) <= 0) {
+            throw new IllegalArgumentException(
+                    "Invalid balance tier thresholds: require 0 < mediumThreshold <"
+                            + " highThreshold");
+        }
         this.tierMap = new TreeMap<>();
         this.tierMap.put(BigDecimal.ZERO, BalanceTier.LOW);
         this.tierMap.put(properties.getMediumThreshold(), BalanceTier.MEDIUM);

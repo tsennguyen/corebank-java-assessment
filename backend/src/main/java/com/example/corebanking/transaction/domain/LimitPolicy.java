@@ -31,6 +31,13 @@ public class LimitPolicy {
         Objects.requireNonNull(amount, "amount must not be null");
         Objects.requireNonNull(currentDailySpent, "currentDailySpent must not be null");
 
+        if (!account.isActive()) {
+            throw new BusinessRuleException(
+                    ErrorCode.ACCOUNT_NOT_ACTIVE,
+                    "Cannot execute outgoing transaction on account in status: "
+                            + account.getStatus());
+        }
+
         AccountLimits limits = limitProvider.getLimits(account);
         BigDecimal transactionLimit = limits.transactionLimit();
         BigDecimal dailyLimit = limits.dailyLimit();

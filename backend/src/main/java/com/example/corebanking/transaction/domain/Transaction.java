@@ -91,6 +91,27 @@ public class Transaction extends BaseEntity {
             BigDecimal targetBalanceAfter,
             String location,
             String description) {
+        return createDeposit(
+                referenceNo,
+                targetAccountId,
+                amount,
+                targetBalanceAfter,
+                location,
+                description,
+                null,
+                null);
+    }
+
+    /** Factory method creating a valid deposit transaction record with optional recurring link. */
+    public static Transaction createDeposit(
+            String referenceNo,
+            Long targetAccountId,
+            BigDecimal amount,
+            BigDecimal targetBalanceAfter,
+            String location,
+            String description,
+            Long recurringId,
+            String createdBy) {
         Objects.requireNonNull(referenceNo, "referenceNo must not be null");
         Objects.requireNonNull(targetAccountId, "targetAccountId must not be null");
         Objects.requireNonNull(amount, "amount must not be null");
@@ -113,6 +134,8 @@ public class Transaction extends BaseEntity {
                 .systemBalanceDelta(scaledAmount)
                 .location(location)
                 .description(description)
+                .recurringId(recurringId)
+                .createdBy(createdBy)
                 .build();
     }
 
@@ -163,6 +186,33 @@ public class Transaction extends BaseEntity {
             BigDecimal targetBalanceAfter,
             String location,
             String description) {
+        return createTransfer(
+                referenceNo,
+                sourceAccountId,
+                targetAccountId,
+                amount,
+                fee,
+                sourceBalanceAfter,
+                targetBalanceAfter,
+                location,
+                description,
+                null,
+                null);
+    }
+
+    /** Factory method creating a valid transfer transaction record with optional recurring link. */
+    public static Transaction createTransfer(
+            String referenceNo,
+            Long sourceAccountId,
+            Long targetAccountId,
+            BigDecimal amount,
+            BigDecimal fee,
+            BigDecimal sourceBalanceAfter,
+            BigDecimal targetBalanceAfter,
+            String location,
+            String description,
+            Long recurringId,
+            String createdBy) {
         Objects.requireNonNull(referenceNo, "referenceNo must not be null");
         Objects.requireNonNull(sourceAccountId, "sourceAccountId must not be null");
         Objects.requireNonNull(targetAccountId, "targetAccountId must not be null");
@@ -190,6 +240,8 @@ public class Transaction extends BaseEntity {
                 .systemBalanceDelta(systemDelta)
                 .location(location)
                 .description(description)
+                .recurringId(recurringId)
+                .createdBy(createdBy)
                 .build();
     }
 
@@ -202,6 +254,29 @@ public class Transaction extends BaseEntity {
             BigDecimal sourceBalanceAfter,
             String location,
             String description) {
+        return createPayment(
+                referenceNo,
+                sourceAccountId,
+                amount,
+                fee,
+                sourceBalanceAfter,
+                location,
+                description,
+                null,
+                null);
+    }
+
+    /** Factory method creating a valid payment transaction record with optional recurring link. */
+    public static Transaction createPayment(
+            String referenceNo,
+            Long sourceAccountId,
+            BigDecimal amount,
+            BigDecimal fee,
+            BigDecimal sourceBalanceAfter,
+            String location,
+            String description,
+            Long recurringId,
+            String createdBy) {
         Objects.requireNonNull(referenceNo, "referenceNo must not be null");
         Objects.requireNonNull(sourceAccountId, "sourceAccountId must not be null");
         Objects.requireNonNull(amount, "amount must not be null");
@@ -226,6 +301,8 @@ public class Transaction extends BaseEntity {
                 .systemBalanceDelta(systemDelta)
                 .location(location)
                 .description(description)
+                .recurringId(recurringId)
+                .createdBy(createdBy)
                 .build();
     }
 
@@ -258,6 +335,11 @@ public class Transaction extends BaseEntity {
         if (this.type == TransactionType.REVERSAL) {
             throw new BusinessRuleException(
                     ErrorCode.INVALID_STATUS_TRANSITION, "Cannot reverse a reversal transaction");
+        }
+        if (this.status != TransactionStatus.COMPLETED) {
+            throw new BusinessRuleException(
+                    ErrorCode.INVALID_STATUS_TRANSITION,
+                    "Cannot reverse transaction with status: " + this.status);
         }
         this.status = TransactionStatus.REVERSED;
     }

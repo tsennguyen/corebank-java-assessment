@@ -1,0 +1,58 @@
+name: Publish JaCoCo Coverage Report to GitHub Pages
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+      - prod
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish-coverage:
+    name: Verify >=80% Coverage & Deploy HTML Report
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+          cache-dependency-path: 'backend/pom.xml'
+
+      - name: Ensure Maven Wrapper is executable
+        working-directory: backend
+        run: chmod +x mvnw
+
+      - name: Run Maven Verify with Testcontainers & JaCoCo Gate (>=80%)
+        working-directory: backend
+        run: ./mvnw -B verify -Pci
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload JaCoCo HTML Report Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: backend/target/site/jacoco
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

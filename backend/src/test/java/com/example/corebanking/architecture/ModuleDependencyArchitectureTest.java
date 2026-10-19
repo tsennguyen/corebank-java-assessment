@@ -37,7 +37,11 @@ class ModuleDependencyArchitectureTest {
                                     for (int i = 0; i < lines.size(); i++) {
                                         String line = lines.get(i).trim();
                                         if (line.startsWith(
-                                                "import com.example.corebanking.transaction")) {
+                                                        "import"
+                                                            + " com.example.corebanking.transaction")
+                                                || line.startsWith(
+                                                        "import"
+                                                            + " com.example.corebanking.recurring")) {
                                             violations.add(
                                                     file.getFileName()
                                                             + ":"
@@ -54,7 +58,8 @@ class ModuleDependencyArchitectureTest {
 
         assertThat(violations)
                 .withFailMessage(
-                        "Found illegal dependency from account module to transaction module: %s",
+                        "Found illegal dependency from account module to transaction/recurring"
+                                + " module: %s",
                         violations)
                 .isEmpty();
     }

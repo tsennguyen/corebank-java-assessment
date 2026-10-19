@@ -530,6 +530,41 @@ class TransactionServiceTest {
                     .isInstanceOf(ResourceNotFoundException.class)
                     .hasMessageContaining("Account not found with identifier: 999");
         }
+
+        @Test
+        @DisplayName(
+                "payment() throws VALIDATION_FAILED when combined description and recipientInfo"
+                        + " exceed 500 characters")
+        void payment_whenCombinedDescriptionExceeds500Chars_shouldThrowValidationFailed() {
+            Account account =
+                    createAccount(
+                            1L,
+                            new BigDecimal("2000000.00"),
+                            new BigDecimal("50000000.00"),
+                            new BigDecimal("100000000.00"));
+            PaymentRequest request =
+                    new PaymentRequest(
+                            1L,
+                            new BigDecimal("500000.00"),
+                            "Web",
+                            "A".repeat(450),
+                            "B".repeat(100));
+
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account));
+            when(transactionRepository.sumOutgoingAmountSince(
+                            eq(1L), eq(TransactionStatus.COMPLETED), any(Instant.class)))
+                    .thenReturn(BigDecimal.ZERO);
+            when(feePolicy.calculateFee(TransactionType.PAYMENT, Money.of("500000.00")))
+                    .thenReturn(Money.of("0.00"));
+            when(referenceGenerator.generate()).thenReturn("TXN-20261012-PAY002");
+
+            assertThatThrownBy(() -> transactionService.payment(request))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .satisfies(
+                            ex ->
+                                    assertThat(((BusinessRuleException) ex).getErrorCode())
+                                            .isEqualTo(ErrorCode.VALIDATION_FAILED));
+        }
     }
 
     // ==========================================
@@ -711,7 +746,7 @@ class TransactionServiceTest {
                             new BigDecimal("100000.00"),
                             "Old Loc",
                             "Old Desc");
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
             when(transactionRepository.saveAndFlush(any(Transaction.class)))
                     .thenAnswer(inv -> inv.getArgument(0));
 
@@ -752,7 +787,7 @@ class TransactionServiceTest {
                 "updateTransactionMetadata throws ResourceNotFoundException when transaction not"
                         + " found")
         void updateTransactionMetadata_whenNotFound_shouldThrowNotFound() {
-            when(transactionRepository.findById(999L)).thenReturn(Optional.empty());
+            when(transactionRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
             UpdateTransactionRequest request = new UpdateTransactionRequest("Desc", "Loc");
 
             assertThatThrownBy(() -> transactionService.updateTransactionMetadata(999L, request))
@@ -773,7 +808,7 @@ class TransactionServiceTest {
                             "Loc",
                             "Desc");
             tx.markReversed();
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
             UpdateTransactionRequest request = new UpdateTransactionRequest("New Desc", "New Loc");
 
             assertThatThrownBy(() -> transactionService.updateTransactionMetadata(1L, request))
@@ -794,7 +829,7 @@ class TransactionServiceTest {
                 "reverseTransaction throws ResourceNotFoundException when transaction does not"
                         + " exist")
         void reverseTransaction_whenNotFound_shouldThrowNotFound() {
-            when(transactionRepository.findById(999L)).thenReturn(Optional.empty());
+            when(transactionRepository.findByIdForUpdate(999L)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(999L))
                     .isInstanceOf(ResourceNotFoundException.class);
@@ -812,7 +847,7 @@ class TransactionServiceTest {
                             "Loc",
                             "Desc");
             tx.markReversed();
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(1L))
                     .isInstanceOf(BusinessRuleException.class)
@@ -834,7 +869,7 @@ class TransactionServiceTest {
                             new BigDecimal("100000.00"),
                             "Loc",
                             "Desc");
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(tx));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(tx));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(true);
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(1L))
@@ -861,7 +896,7 @@ class TransactionServiceTest {
             Transaction reversalTx =
                     Transaction.createDepositReversal(
                             "TXN-REV003-R", orig, BigDecimal.ZERO, null, null);
-            when(transactionRepository.findById(2L)).thenReturn(Optional.of(reversalTx));
+            when(transactionRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(reversalTx));
 
             assertThatThrownBy(() -> transactionService.reverseTransaction(2L))
                     .isInstanceOf(BusinessRuleException.class)
@@ -893,7 +928,7 @@ class TransactionServiceTest {
                             "HN",
                             "Deposit");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(targetAccount));
             when(referenceGenerator.generate()).thenReturn("TXN-REV-DEP-001");
@@ -934,7 +969,7 @@ class TransactionServiceTest {
                             "ATM",
                             "Withdrawal");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(sourceAccount));
             when(referenceGenerator.generate()).thenReturn("TXN-REV-WTH-001");
@@ -971,7 +1006,7 @@ class TransactionServiceTest {
                             "Online",
                             "Bill payment");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(sourceAccount));
             when(referenceGenerator.generate()).thenReturn("TXN-REV-PAY-001");
@@ -1021,7 +1056,7 @@ class TransactionServiceTest {
                             "Online",
                             "Transfer");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account1));
             when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(account2));
@@ -1080,7 +1115,7 @@ class TransactionServiceTest {
                             "Online",
                             "Transfer");
 
-            when(transactionRepository.findById(1L)).thenReturn(Optional.of(orig));
+            when(transactionRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(orig));
             when(transactionRepository.existsByReversalOfId(1L)).thenReturn(false);
             when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account1));
             when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(account2));
@@ -1093,6 +1128,377 @@ class TransactionServiceTest {
                                             .isEqualTo(ErrorCode.INSUFFICIENT_BALANCE));
 
             assertThat(orig.getStatus()).isEqualTo(TransactionStatus.COMPLETED); // not modified
+        }
+
+        @Test
+        @DisplayName(
+                "resolveCurrentScope returns authenticated principal name or DEFAULT when"
+                        + " unauthenticated (R3-10)")
+        void resolveCurrentScope_shouldReturnPrincipalNameOrDefault() {
+            try {
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
+                assertThat(TransactionService.resolveCurrentScope()).isEqualTo("DEFAULT");
+
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .setAuthentication(
+                                new org.springframework.security.authentication
+                                        .UsernamePasswordAuthenticationToken(
+                                        "admin",
+                                        "N/A",
+                                        java.util.List.of(
+                                                new org.springframework.security.core.authority
+                                                        .SimpleGrantedAuthority("ROLE_ADMIN"))));
+                assertThat(TransactionService.resolveCurrentScope()).isEqualTo("admin");
+            } finally {
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
+            }
+        }
+
+        @Test
+        @DisplayName(
+                "searchTransactions restricts results to owned accounts for CUSTOMER and rejects"
+                        + " unowned accountId (AC 4, L2-01)")
+        void
+                searchTransactions_whenCustomer_shouldRestrictToOwnedAccountsAndRejectForeignAccount() {
+            org.springframework.security.oauth2.jwt.Jwt jwt =
+                    org.springframework.security.oauth2.jwt.Jwt.withTokenValue("cust-token")
+                            .header("alg", "HS256")
+                            .subject("2")
+                            .claim("username", "cust.an")
+                            .claim("role", "CUSTOMER")
+                            .claim("customerId", 10L)
+                            .issuedAt(Instant.parse("2026-10-14T10:00:00Z"))
+                            .expiresAt(Instant.parse("2026-10-14T10:15:00Z"))
+                            .build();
+            org.springframework.security.oauth2.server.resource.authentication
+                            .JwtAuthenticationToken
+                    customerAuth =
+                            new org.springframework.security.oauth2.server.resource.authentication
+                                    .JwtAuthenticationToken(
+                                    jwt,
+                                    java.util.List.of(
+                                            new org.springframework.security.core.authority
+                                                    .SimpleGrantedAuthority("ROLE_CUSTOMER")),
+                                    "cust.an");
+
+            try {
+                org.springframework.security.core.context.SecurityContextHolder.getContext()
+                        .setAuthentication(customerAuth);
+
+                // 1. Customer with empty account set returns empty page without DB query
+                when(accountRepository.findIdsByCustomerId(10L)).thenReturn(java.util.Set.of());
+                PageResponse<TransactionResponse> emptyResult =
+                        transactionService.searchTransactions(
+                                new TransactionSearchCriteria(null, null), PageRequest.of(0, 20));
+                assertThat(emptyResult.content()).isEmpty();
+                assertThat(emptyResult.totalElements()).isZero();
+
+                // 2. Customer with owned accounts queries only within owned account IDs
+                when(accountRepository.findIdsByCustomerId(10L))
+                        .thenReturn(java.util.Set.of(100L, 101L));
+                Transaction tx =
+                        Transaction.createDeposit(
+                                "TXN-CUST-001",
+                                100L,
+                                new BigDecimal("500000.00"),
+                                new BigDecimal("500000.00"),
+                                "HN",
+                                "Nạp");
+                when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                        .thenReturn(new PageImpl<>(List.of(tx), PageRequest.of(0, 20), 1));
+                PageResponse<TransactionResponse> ownedResult =
+                        transactionService.searchTransactions(
+                                new TransactionSearchCriteria(null, null), PageRequest.of(0, 20));
+                assertThat(ownedResult.content()).hasSize(1);
+
+                // 3. Customer filtering by owned accountId succeeds
+                when(accountRepository.existsByIdAndCustomerId(100L, 10L)).thenReturn(true);
+                PageResponse<TransactionResponse> filteredOwned =
+                        transactionService.searchTransactions(
+                                new TransactionSearchCriteria(100L, null), PageRequest.of(0, 20));
+                assertThat(filteredOwned.content()).hasSize(1);
+
+                // 4. Customer filtering by foreign accountId throws AccessDeniedException
+                when(accountRepository.existsByIdAndCustomerId(999L, 10L)).thenReturn(false);
+                assertThatThrownBy(
+                                () ->
+                                        transactionService.searchTransactions(
+                                                new TransactionSearchCriteria(999L, null),
+                                                PageRequest.of(0, 20)))
+                        .isInstanceOf(
+                                org.springframework.security.access.AccessDeniedException.class);
+            } finally {
+                org.springframework.security.core.context.SecurityContextHolder.clearContext();
+            }
+        }
+
+        @Test
+        @DisplayName(
+                "searchTransactions supports multi-filter criteria (status, minAmount, maxAmount,"
+                        + " fromDate, toDate) and sorting by fee (AC 1, AC 2, L2-03, L2-04)")
+        void searchTransactions_withAdvancedFiltersAndFeeSort_shouldReturnPagedResults() {
+            Transaction tx =
+                    Transaction.createTransfer(
+                            "TXN-TRF-3301",
+                            1L,
+                            2L,
+                            new BigDecimal("2500000.00"),
+                            new BigDecimal("2000.00"),
+                            new BigDecimal("7498000.00"),
+                            new BigDecimal("12500000.00"),
+                            "HCMC",
+                            "Chuyển khoản tháng 9");
+            Pageable feeSortedPageable = PageRequest.of(0, 10, Sort.by(Sort.Order.desc("fee")));
+            when(transactionRepository.findAll(any(Specification.class), any(Pageable.class)))
+                    .thenReturn(new PageImpl<>(List.of(tx), feeSortedPageable, 1));
+
+            TransactionSearchCriteria criteria =
+                    new TransactionSearchCriteria(
+                            1L,
+                            TransactionType.TRANSFER,
+                            TransactionStatus.COMPLETED,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("5000000.00"),
+                            LocalDate.of(2026, 9, 1),
+                            LocalDate.of(2026, 9, 30));
+
+            PageResponse<TransactionResponse> result =
+                    transactionService.searchTransactions(criteria, feeSortedPageable);
+
+            assertThat(result.content()).hasSize(1);
+            assertThat(result.content().get(0).referenceNo()).isEqualTo("TXN-TRF-3301");
+            assertThat(result.content().get(0).fee()).isEqualByComparingTo("2000.00");
+        }
+
+        @Test
+        @DisplayName(
+                "searchTransactions rejects negative minAmount/maxAmount, minAmount > maxAmount,"
+                        + " and fromDate > toDate with VALIDATION_FAILED (AC 2)")
+        void searchTransactions_whenInvalidFilterRanges_shouldThrowValidationFailed() {
+            Pageable pageable = PageRequest.of(0, 10);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    new BigDecimal("-1.00"),
+                                                    null,
+                                                    null,
+                                                    null),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    new BigDecimal("-100.00"),
+                                                    null,
+                                                    null),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    new BigDecimal("5000000.00"),
+                                                    new BigDecimal("1000000.00"),
+                                                    null,
+                                                    null),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.searchTransactions(
+                                            new TransactionSearchCriteria(
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    null,
+                                                    LocalDate.of(2026, 10, 15),
+                                                    LocalDate.of(2026, 10, 1)),
+                                            pageable))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+        }
+
+        @Test
+        @DisplayName(
+                "executeScheduledTransaction validates same account, inactive source/target, and"
+                        + " unsupported type before mutating balances (L2-07)")
+        void executeScheduledTransaction_edgeCases_shouldValidateBeforeMutating() {
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.TRANSFER,
+                                            "REC-1-20261015",
+                                            1L,
+                                            10L,
+                                            10L,
+                                            new BigDecimal("100000.00"),
+                                            "HQ",
+                                            "Same account"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.SAME_ACCOUNT_TRANSFER);
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.WITHDRAWAL,
+                                            "REC-2-20261015",
+                                            2L,
+                                            10L,
+                                            null,
+                                            new BigDecimal("100000.00"),
+                                            "HQ",
+                                            "Unsupported"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.VALIDATION_FAILED);
+
+            Account activeSource =
+                    createAccount(
+                            1L,
+                            new BigDecimal("5000000.00"),
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"));
+            Account lockedTarget =
+                    createAccount(
+                            2L,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"));
+            lockedTarget.changeStatus(
+                    com.example.corebanking.account.domain.AccountStatus.LOCKED, Instant.now());
+
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(activeSource));
+            when(accountRepository.findByIdForUpdate(2L)).thenReturn(Optional.of(lockedTarget));
+
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.TRANSFER,
+                                            "REC-3-20261015",
+                                            3L,
+                                            1L,
+                                            2L,
+                                            new BigDecimal("500000.00"),
+                                            "HQ",
+                                            "Target locked"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.ACCOUNT_NOT_ACTIVE);
+            assertThat(activeSource.getBalance()).isEqualByComparingTo("5000000.00");
+
+            when(transactionRepository.findByReferenceNo("REC-4-20261015"))
+                    .thenReturn(
+                            Optional.of(
+                                    Transaction.createDeposit(
+                                            "REC-4-20261015",
+                                            1L,
+                                            new BigDecimal("100000.00"),
+                                            new BigDecimal("5100000.00"),
+                                            "HQ",
+                                            "Already executed")));
+            assertThatThrownBy(
+                            () ->
+                                    transactionService.executeScheduledTransaction(
+                                            TransactionType.DEPOSIT,
+                                            "REC-4-20261015",
+                                            4L,
+                                            null,
+                                            1L,
+                                            new BigDecimal("100000.00"),
+                                            "HQ",
+                                            "Duplicate period"))
+                    .isInstanceOf(BusinessRuleException.class)
+                    .extracting("errorCode")
+                    .isEqualTo(ErrorCode.DUPLICATE_RESOURCE);
+        }
+
+        @Test
+        @DisplayName(
+                "banking.transactions Timer records type and outcome (SUCCESS/FAILURE) tags when"
+                        + " MeterRegistry is configured (Story 4.8: L3-09, FR-24)")
+        void transactionsMetric_shouldRecordTimerWithTypeAndOutcomeTags() {
+            io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry =
+                    new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+            TransactionService meteredService =
+                    new TransactionService(
+                            accountRepository,
+                            transactionRepository,
+                            referenceGenerator,
+                            feePolicy,
+                            limitPolicy,
+                            clock,
+                            eventPublisher,
+                            null,
+                            meterRegistry);
+
+            Account account =
+                    createAccount(
+                            1L,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"));
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account));
+            when(referenceGenerator.generate()).thenReturn("TXN-METRIC-001");
+            when(transactionRepository.save(any(Transaction.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            meteredService.deposit(
+                    new DepositRequest(
+                            1L, new BigDecimal("500000.00"), "HCMC", "Metric test deposit"));
+
+            assertThat(
+                            meterRegistry
+                                    .get(TransactionService.TRANSACTIONS_METRIC)
+                                    .tag("type", "DEPOSIT")
+                                    .tag("outcome", "SUCCESS")
+                                    .timer()
+                                    .count())
+                    .isEqualTo(1L);
+
+            assertThatThrownBy(
+                            () ->
+                                    meteredService.transfer(
+                                            new TransferRequest(
+                                                    1L,
+                                                    1L,
+                                                    new BigDecimal("100000.00"),
+                                                    "HCMC",
+                                                    "Same account failure")))
+                    .isInstanceOf(BusinessRuleException.class);
+
+            assertThat(
+                            meterRegistry
+                                    .get(TransactionService.TRANSACTIONS_METRIC)
+                                    .tag("type", "TRANSFER")
+                                    .tag("outcome", "FAILURE")
+                                    .timer()
+                                    .count())
+                    .isEqualTo(1L);
         }
     }
 }

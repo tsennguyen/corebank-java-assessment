@@ -32,10 +32,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 @AutoConfigureMockMvc
+@WithMockUser(roles = "ADMIN")
 class StatisticsIntegrationTest extends IntegrationTestBase {
 
     @Autowired private MockMvc mockMvc;
@@ -255,6 +257,47 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
         mockMvc.perform(get("/api/v1/statistics/customers-by-location"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].customerCount").isNumber());
+
+        // Verify that reversing a transaction excludes both the REVERSED original and the REVERSAL
+        // entry from balance-tier transactionCount, and null/blank location maps to UNKNOWN
+        var extraDep =
+                transactionService.deposit(
+                        new DepositRequest(
+                                lowAcc.getId(),
+                                new BigDecimal("1000000.00"),
+                                "Nha Trang",
+                                "Temporary deposit to reverse"));
+        transactionService.reverseTransaction(extraDep.id());
+
+        Map<BalanceTier, BalanceTierStatisticResponse> afterReversalTiers =
+                statisticsService.getBalanceTierStatistics().stream()
+                        .collect(
+                                Collectors.toMap(BalanceTierStatisticResponse::tier, item -> item));
+        assertThat(
+                        afterReversalTiers.get(BalanceTier.LOW).transactionCount()
+                                - baselineTiers.get(BalanceTier.LOW).transactionCount())
+                .isEqualTo(1L);
+
+        customerRepository.saveAndFlush(
+                new Customer(
+                        "CUS9990205",
+                        "Nguyễn Không Tỉnh",
+                        "000999888805",
+                        "tk5@example.com",
+                        "0900000205",
+                        "Địa chỉ ẩn",
+                        "   ",
+                        LocalDate.of(1994, 5, 5)));
+        Map<String, Long> afterUnknownLocations =
+                statisticsService.getCustomersByLocation().stream()
+                        .collect(
+                                Collectors.toMap(
+                                        LocationStatisticResponse::location,
+                                        LocationStatisticResponse::customerCount));
+        assertThat(
+                        afterUnknownLocations.getOrDefault("UNKNOWN", 0L)
+                                - baselineLocations.getOrDefault("UNKNOWN", 0L))
+                .isEqualTo(1L);
     }
 
     @Test
@@ -323,5 +366,16 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
                 assertThat(current.location()).isLessThanOrEqualTo(next.location());
             }
         }
+
+        // 5. Verify initial anomaly alerts (AMOUNT_THRESHOLD and VELOCITY) are seeded in core.alert
+        Long seededAlerts =
+                jdbcClient
+                        .sql(
+                                "SELECT COUNT(*) FROM core.alert a JOIN core.transaction t ON"
+                                        + " t.id = a.transaction_id WHERE t.reference_no IN"
+                                        + " ('TXN-SEED-0017', 'TXN-SEED-0023')")
+                        .query(Long.class)
+                        .single();
+        assertThat(seededAlerts).isEqualTo(2L);
     }
 }

@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.OwnershipGuard;
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.PageResponse;
 import com.example.corebanking.common.api.RequestIdFilter;
@@ -27,15 +29,25 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(AccountTransactionController.class)
-@Import({ClockConfig.class, GlobalExceptionHandler.class, RequestIdFilter.class})
+@Import({
+    ClockConfig.class,
+    GlobalExceptionHandler.class,
+    RequestIdFilter.class,
+    SecurityConfig.class
+})
+@WithMockUser(roles = "ADMIN")
 class AccountTransactionControllerTest {
 
     @Autowired private MockMvc mockMvc;
 
     @MockBean private TransactionService transactionService;
+
+    @MockBean(name = "ownership")
+    private OwnershipGuard ownershipGuard;
 
     @Test
     @DisplayName("GET /api/v1/accounts/{id}/transactions returns 200 with paginated transactions")
@@ -81,5 +93,58 @@ class AccountTransactionControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(404))
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/transactions returns 200 when CUSTOMER accesses own account"
+                    + " (AC 3)")
+    void getAccountTransactions_whenCustomerAccessesOwnAccount_shouldReturn200() throws Exception {
+        when(ownershipGuard.canAccessAccount(any(), eq(10L))).thenReturn(true);
+        when(transactionService.getAccountTransactions(eq(10L), any(Pageable.class)))
+                .thenReturn(new PageResponse<>(List.of(), 0, 20, 0L, 0));
+
+        mockMvc.perform(get("/api/v1/accounts/10/transactions")).andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(username = "cust.an", roles = "CUSTOMER")
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/transactions returns 403 ACCESS_DENIED when CUSTOMER"
+                    + " accesses another account (AC 3)")
+    void getAccountTransactions_whenCustomerAccessesOtherAccount_shouldReturn403ProblemDetail()
+            throws Exception {
+        when(ownershipGuard.canAccessAccount(any(), eq(20L))).thenReturn(false);
+
+        mockMvc.perform(get("/api/v1/accounts/20/transactions"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
+    }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/transactions/cursor and ?cursor= return 200 with"
+                    + " CursorPageResponse (Story 6.1)")
+    void getAccountTransactionsByCursor_shouldReturn200() throws Exception {
+        var cursorPage =
+                new com.example.corebanking.common.api.CursorPageResponse<TransactionResponse>(
+                        List.of(), 50, null, false);
+        when(transactionService.getAccountTransactionsByCursor(eq(10L), any(), eq(50)))
+                .thenReturn(cursorPage);
+
+        mockMvc.perform(get("/api/v1/accounts/10/transactions/cursor").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(50))
+                .andExpect(jsonPath("$.hasNext").value(false));
+
+        mockMvc.perform(
+                        get("/api/v1/accounts/10/transactions")
+                                .param("cursor", "")
+                                .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(50))
+                .andExpect(jsonPath("$.hasNext").value(false));
     }
 }

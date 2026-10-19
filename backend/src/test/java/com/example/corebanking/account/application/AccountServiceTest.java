@@ -8,15 +8,20 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.example.corebanking.account.api.dto.AccountResponse;
+import com.example.corebanking.account.api.dto.AccountStatusHistoryResponse;
+import com.example.corebanking.account.api.dto.ChangeAccountStatusRequest;
 import com.example.corebanking.account.api.dto.CreateAccountRequest;
 import com.example.corebanking.account.api.dto.UpdateAccountLimitsRequest;
 import com.example.corebanking.account.domain.Account;
 import com.example.corebanking.account.domain.AccountStatus;
+import com.example.corebanking.account.domain.AccountStatusHistory;
 import com.example.corebanking.account.domain.BalanceTier;
 import com.example.corebanking.account.domain.BalanceTierPolicy;
 import com.example.corebanking.account.domain.BalanceTierProperties;
+import com.example.corebanking.account.domain.event.AccountStatusChangedEvent;
 import com.example.corebanking.account.infrastructure.AccountNumberGenerator;
 import com.example.corebanking.account.infrastructure.AccountRepository;
+import com.example.corebanking.account.infrastructure.AccountStatusHistoryRepository;
 import com.example.corebanking.common.api.PageResponse;
 import com.example.corebanking.common.domain.BaseEntity;
 import com.example.corebanking.common.domain.BusinessRuleException;
@@ -36,8 +41,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -49,6 +56,8 @@ class AccountServiceTest {
     @Mock private AccountRepository accountRepository;
     @Mock private CustomerRepository customerRepository;
     @Mock private AccountNumberGenerator accountNumberGenerator;
+    @Mock private AccountStatusHistoryRepository statusHistoryRepository;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private final Clock clock =
             Clock.fixed(Instant.parse("2026-10-09T08:00:00Z"), ZoneId.of("Asia/Ho_Chi_Minh"));
@@ -67,7 +76,9 @@ class AccountServiceTest {
                         customerRepository,
                         accountNumberGenerator,
                         balanceTierPolicy,
-                        clock);
+                        clock,
+                        statusHistoryRepository,
+                        eventPublisher);
     }
 
     private void setId(Account account, Long id) {
@@ -118,7 +129,8 @@ class AccountServiceTest {
                         "Ha Noi",
                         LocalDate.of(1990, 1, 15));
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(1L))
+                .thenReturn(Optional.of(customer));
         when(accountNumberGenerator.nextAccountNumber()).thenReturn("100000000016");
         when(accountRepository.save(any(Account.class)))
                 .thenAnswer(
@@ -149,7 +161,8 @@ class AccountServiceTest {
                 new CreateAccountRequest(
                         999L, new BigDecimal("10000000.00"), new BigDecimal("50000000.00"));
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(999L)).thenReturn(Optional.empty());
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(999L))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> accountService.createAccount(request))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -174,7 +187,8 @@ class AccountServiceTest {
                         "Ha Noi",
                         LocalDate.of(1990, 1, 15));
 
-        when(customerRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndDeletedAtIsNullForUpdate(1L))
+                .thenReturn(Optional.of(customer));
 
         assertThatThrownBy(() -> accountService.createAccount(request))
                 .isInstanceOf(BusinessRuleException.class)
@@ -326,7 +340,9 @@ class AccountServiceTest {
     }
 
     @Test
-    @DisplayName("closeAccount closes account with zero balance")
+    @DisplayName(
+            "closeAccount closes account with zero balance under pessimistic lock and records"
+                    + " status history")
     void closeAccount_shouldSucceedWhenBalanceZero() {
         Account account =
                 new Account(
@@ -337,13 +353,16 @@ class AccountServiceTest {
                         LocalDate.of(2026, 10, 9));
         setId(account, 10L);
 
-        when(accountRepository.findById(10L)).thenReturn(Optional.of(account));
+        when(accountRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(account));
+        when(accountRepository.save(account)).thenReturn(account);
 
         accountService.closeAccount(10L);
 
         assertThat(account.getStatus()).isEqualTo(AccountStatus.CLOSED);
         assertThat(account.getClosedAt()).isEqualTo(clock.instant());
         verify(accountRepository).save(account);
+        verify(statusHistoryRepository).save(any(AccountStatusHistory.class));
+        verify(eventPublisher).publishEvent(any(AccountStatusChangedEvent.class));
     }
 
     @Test
@@ -359,7 +378,7 @@ class AccountServiceTest {
         setId(account, 10L);
         setBalance(account, new BigDecimal("100000.00"));
 
-        when(accountRepository.findById(10L)).thenReturn(Optional.of(account));
+        when(accountRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(account));
 
         assertThatThrownBy(() -> accountService.closeAccount(10L))
                 .isInstanceOf(BusinessRuleException.class)
@@ -368,5 +387,119 @@ class AccountServiceTest {
                                 assertThat(((BusinessRuleException) ex).getErrorCode())
                                         .isEqualTo(ErrorCode.ACCOUNT_HAS_BALANCE))
                 .hasMessageContaining("Account balance must be zero before closing");
+    }
+
+    @Test
+    @DisplayName(
+            "getAccountsByCustomerId returns customer accounts ordered by id desc with balanceTier"
+                    + " and optional status filter (AC 2)")
+    void getAccountsByCustomerId_shouldReturnMappedAccountsAndSupportStatusFilter() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        10L,
+                        new BigDecimal("10000000.00"),
+                        new BigDecimal("50000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        setId(account, 101L);
+        setBalance(account, new BigDecimal("75000000.00"));
+
+        when(accountRepository.findByCustomerIdOrderByIdDesc(10L)).thenReturn(List.of(account));
+        when(accountRepository.findByCustomerIdAndStatusOrderByIdDesc(10L, AccountStatus.ACTIVE))
+                .thenReturn(List.of(account));
+
+        List<AccountResponse> all = accountService.getAccountsByCustomerId(10L, null);
+        assertThat(all).hasSize(1);
+        assertThat(all.get(0).id()).isEqualTo(101L);
+        assertThat(all.get(0).balanceTier()).isEqualTo(BalanceTier.MEDIUM);
+
+        List<AccountResponse> activeOnly =
+                accountService.getAccountsByCustomerId(10L, AccountStatus.ACTIVE);
+        assertThat(activeOnly).hasSize(1);
+        assertThat(activeOnly.get(0).status()).isEqualTo(AccountStatus.ACTIVE);
+    }
+
+    @Test
+    @DisplayName(
+            "changeStatus transitions ACTIVE -> LOCKED, saves AccountStatusHistory, and publishes"
+                    + " AccountStatusChangedEvent (L2-05)")
+    void changeStatus_shouldTransitionAndRecordHistoryAndPublishEvent() {
+        Account account =
+                new Account(
+                        "100000000016",
+                        1L,
+                        new BigDecimal("10000000.00"),
+                        new BigDecimal("50000000.00"),
+                        LocalDate.of(2026, 10, 9));
+        setId(account, 10L);
+        setCreatedAt(account, clock.instant());
+
+        when(accountRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(account));
+        when(accountRepository.save(account)).thenReturn(account);
+
+        ChangeAccountStatusRequest request =
+                new ChangeAccountStatusRequest(
+                        AccountStatus.LOCKED, "Phong tỏa tạm thời để xác minh");
+
+        AccountResponse response = accountService.changeStatus(10L, request);
+
+        assertThat(response.status()).isEqualTo(AccountStatus.LOCKED);
+
+        ArgumentCaptor<AccountStatusHistory> histCaptor =
+                ArgumentCaptor.forClass(AccountStatusHistory.class);
+        verify(statusHistoryRepository).save(histCaptor.capture());
+        AccountStatusHistory savedHist = histCaptor.getValue();
+        assertThat(savedHist.getAccountId()).isEqualTo(10L);
+        assertThat(savedHist.getFromStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(savedHist.getToStatus()).isEqualTo(AccountStatus.LOCKED);
+        assertThat(savedHist.getReason()).isEqualTo("Phong tỏa tạm thời để xác minh");
+        assertThat(savedHist.getChangedAt()).isEqualTo(clock.instant());
+
+        ArgumentCaptor<AccountStatusChangedEvent> eventCaptor =
+                ArgumentCaptor.forClass(AccountStatusChangedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        AccountStatusChangedEvent event = eventCaptor.getValue();
+        assertThat(event.accountId()).isEqualTo(10L);
+        assertThat(event.customerId()).isEqualTo(1L);
+        assertThat(event.fromStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(event.toStatus()).isEqualTo(AccountStatus.LOCKED);
+    }
+
+    @Test
+    @DisplayName(
+            "getStatusHistory returns history entries ordered by changedAt desc, id desc and throws"
+                    + " 404 when account missing (L2-05)")
+    void getStatusHistory_shouldReturnHistoryOrThrow404() {
+        when(accountRepository.existsById(10L)).thenReturn(true);
+        AccountStatusHistory h2 =
+                new AccountStatusHistory(
+                        10L,
+                        AccountStatus.ACTIVE,
+                        AccountStatus.LOCKED,
+                        "Khóa tài khoản",
+                        "admin",
+                        clock.instant());
+        AccountStatusHistory h1 =
+                new AccountStatusHistory(
+                        10L,
+                        null,
+                        AccountStatus.ACTIVE,
+                        "Account opened",
+                        "admin",
+                        clock.instant().minusSeconds(60));
+        when(statusHistoryRepository.findByAccountIdOrderByChangedAtDescIdDesc(10L))
+                .thenReturn(List.of(h2, h1));
+
+        List<AccountStatusHistoryResponse> history = accountService.getStatusHistory(10L);
+        assertThat(history).hasSize(2);
+        assertThat(history.get(0).fromStatus()).isEqualTo(AccountStatus.ACTIVE);
+        assertThat(history.get(0).toStatus()).isEqualTo(AccountStatus.LOCKED);
+        assertThat(history.get(1).fromStatus()).isNull();
+        assertThat(history.get(1).toStatus()).isEqualTo(AccountStatus.ACTIVE);
+
+        when(accountRepository.existsById(999L)).thenReturn(false);
+        assertThatThrownBy(() -> accountService.getStatusHistory(999L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining("Account not found with identifier: 999");
     }
 }

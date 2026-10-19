@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.example.corebanking.auth.infrastructure.SecurityConfig;
 import com.example.corebanking.common.api.GlobalExceptionHandler;
 import com.example.corebanking.common.api.RequestIdFilter;
 import com.example.corebanking.common.config.ClockConfig;
@@ -18,10 +19,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(FeeController.class)
-@Import({ClockConfig.class, GlobalExceptionHandler.class, RequestIdFilter.class})
+@Import({
+    ClockConfig.class,
+    GlobalExceptionHandler.class,
+    RequestIdFilter.class,
+    SecurityConfig.class
+})
+@WithMockUser(roles = "ADMIN")
 class FeeControllerTest {
 
     @Autowired private MockMvc mockMvc;
@@ -115,7 +123,9 @@ class FeeControllerTest {
                                 .param("type", "UNKNOWN_TYPE")
                                 .param("amount", "500000.00"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("type"))
+                .andExpect(jsonPath("$.errors[0].message").value("Invalid value for field 'type'"));
     }
 
     @Test

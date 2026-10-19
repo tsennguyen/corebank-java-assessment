@@ -37,9 +37,11 @@ public record TransactionResponse(
                         example = "2026-10-12T14:30:00Z")
                 Instant createdAt,
         @Schema(description = "ID của giao dịch gốc được đảo (nếu là REVERSAL)", example = "100")
-                Long reversalOfId) {
+                Long reversalOfId,
+        @Schema(description = "ID của lệnh định kỳ sinh ra giao dịch (nếu có)", example = "15")
+                Long recurringId) {
 
-    /** Backward-compatible constructor without reversalOfId. */
+    /** Backward-compatible constructor without reversalOfId and recurringId. */
     public TransactionResponse(
             Long id,
             String referenceNo,
@@ -70,6 +72,43 @@ public record TransactionResponse(
                 location,
                 description,
                 createdAt,
+                null,
+                null);
+    }
+
+    /** Backward-compatible constructor without recurringId. */
+    public TransactionResponse(
+            Long id,
+            String referenceNo,
+            TransactionType type,
+            TransactionStatus status,
+            BigDecimal amount,
+            BigDecimal fee,
+            Long sourceAccountId,
+            Long targetAccountId,
+            BigDecimal sourceBalanceAfter,
+            BigDecimal targetBalanceAfter,
+            BigDecimal systemBalanceDelta,
+            String location,
+            String description,
+            Instant createdAt,
+            Long reversalOfId) {
+        this(
+                id,
+                referenceNo,
+                type,
+                status,
+                amount,
+                fee,
+                sourceAccountId,
+                targetAccountId,
+                sourceBalanceAfter,
+                targetBalanceAfter,
+                systemBalanceDelta,
+                location,
+                description,
+                createdAt,
+                reversalOfId,
                 null);
     }
 
@@ -90,6 +129,7 @@ public record TransactionResponse(
                 entity.getLocation(),
                 entity.getDescription(),
                 entity.getCreatedAt(),
-                entity.getReversalOfId());
+                entity.getReversalOfId(),
+                entity.getRecurringId());
     }
 }

@@ -12,6 +12,7 @@ import com.example.corebanking.transaction.api.dto.TransferRequest;
 import com.example.corebanking.transaction.api.dto.UpdateTransactionRequest;
 import com.example.corebanking.transaction.api.dto.WithdrawalRequest;
 import com.example.corebanking.transaction.application.TransactionService;
+import com.example.corebanking.transaction.domain.TransactionStatus;
 import com.example.corebanking.transaction.domain.TransactionType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -22,13 +23,17 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.math.BigDecimal;
 import java.net.URI;
+import java.time.LocalDate;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -296,9 +301,15 @@ public class TransactionController {
                     ErrorCode.IDEMPOTENCY_KEY_MISSING,
                     "Required header 'Idempotency-Key' is missing or blank");
         }
+        if (idempotencyKey.trim().length() > 128) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Header 'Idempotency-Key' must not exceed 128 characters");
+        }
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or @ownership.canAccessTransaction(authentication, #id)")
     @Operation(
             summary = "Lấy chi tiết giao dịch",
             description = "Truy vấn thông tin chi tiết một giao dịch tài chính theo ID.")
@@ -307,6 +318,10 @@ public class TransactionController {
                 responseCode = "200",
                 description = "Lấy thông tin giao dịch thành công",
                 content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền truy cập giao dịch không thuộc tài khoản sở hữu",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
         @ApiResponse(
                 responseCode = "404",
                 description = "Không tìm thấy giao dịch",
@@ -373,7 +388,8 @@ public class TransactionController {
         @ApiResponse(
                 responseCode = "422",
                 description =
-                        "Tài khoản nhận không đủ số dư để hoàn lại tiền (INSUFFICIENT_BALANCE)",
+                        "Tài khoản không ở trạng thái hoạt động (ACCOUNT_NOT_ACTIVE) hoặc không đủ"
+                                + " số dư để hoàn lại tiền (INSUFFICIENT_BALANCE)",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<TransactionResponse> reverseTransaction(
@@ -383,11 +399,15 @@ public class TransactionController {
     }
 
     @GetMapping
+    @PreAuthorize(
+            "hasRole('ADMIN') or #accountId == null or"
+                    + " @ownership.canAccessAccount(authentication, #accountId)")
     @Operation(
-            summary = "Tìm kiếm và phân trang giao dịch",
+            summary = "Tìm kiếm và phân trang giao dịch nâng cao",
             description =
-                    "Tìm kiếm giao dịch theo tài khoản và loại giao dịch, hỗ trợ phân trang và sắp"
-                            + " xếp có whitelist.")
+                    "Tìm kiếm giao dịch kết hợp nhiều bộ lọc (tài khoản, loại, trạng thái, khoảng"
+                        + " số tiền, khoảng ngày theo múi giờ Asia/Ho_Chi_Minh), hỗ trợ phân trang"
+                        + " và sắp xếp có whitelist (createdAt, amount, fee, id).")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",
@@ -395,20 +415,51 @@ public class TransactionController {
                 content = @Content(schema = @Schema(implementation = PageResponse.class))),
         @ApiResponse(
                 responseCode = "400",
-                description = "Trường sắp xếp không hợp lệ hoặc kích thước trang vượt ngưỡng 100",
+                description =
+                        "Trường sắp xếp không hợp lệ, khoảng số tiền/ngày không hợp lệ hoặc kích"
+                                + " thước trang vượt ngưỡng 100",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Không có quyền lọc giao dịch theo tài khoản của khách hàng khác",
                 content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
     })
     public ResponseEntity<PageResponse<TransactionResponse>> searchTransactions(
             @Parameter(description = "Lọc theo ID tài khoản (nguồn hoặc đích)", example = "1")
                     @RequestParam(required = false)
                     Long accountId,
-            @Parameter(description = "Lọc theo loại giao dịch", example = "DEPOSIT")
+            @Parameter(description = "Lọc theo loại giao dịch", example = "TRANSFER")
                     @RequestParam(required = false)
                     TransactionType type,
+            @Parameter(description = "Lọc theo trạng thái giao dịch", example = "COMPLETED")
+                    @RequestParam(required = false)
+                    TransactionStatus status,
+            @Parameter(description = "Số tiền giao dịch tối thiểu (VND)", example = "1000000")
+                    @RequestParam(required = false)
+                    BigDecimal minAmount,
+            @Parameter(description = "Số tiền giao dịch tối đa (VND)", example = "5000000")
+                    @RequestParam(required = false)
+                    BigDecimal maxAmount,
+            @Parameter(
+                            description = "Từ ngày (YYYY-MM-DD, theo múi giờ Asia/Ho_Chi_Minh)",
+                            example = "2026-09-01")
+                    @RequestParam(required = false)
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                    LocalDate fromDate,
+            @Parameter(
+                            description =
+                                    "Đến hết ngày (YYYY-MM-DD, bao gồm trọn ngày theo múi giờ"
+                                            + " Asia/Ho_Chi_Minh)",
+                            example = "2026-09-30")
+                    @RequestParam(required = false)
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                    LocalDate toDate,
             @ParameterObject
                     @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
                     Pageable pageable) {
-        TransactionSearchCriteria criteria = new TransactionSearchCriteria(accountId, type);
+        TransactionSearchCriteria criteria =
+                new TransactionSearchCriteria(
+                        accountId, type, status, minAmount, maxAmount, fromDate, toDate);
         return ResponseEntity.ok(transactionService.searchTransactions(criteria, pageable));
     }
 }

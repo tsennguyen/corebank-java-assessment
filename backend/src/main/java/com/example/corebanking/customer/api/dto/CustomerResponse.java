@@ -27,7 +27,39 @@ public record CustomerResponse(
         @Schema(description = "Creation timestamp") Instant createdAt,
         @Schema(description = "Last update timestamp") Instant updatedAt,
         @Schema(description = "Current entity version for optimistic locking", example = "0")
-                Long version) {
+                Long version,
+        @Schema(description = "Customer classification code", example = "INDIVIDUAL")
+                String customerTypeCode) {
+
+    /** Backward-compatible 12-arg constructor defaulting customerTypeCode to INDIVIDUAL. */
+    public CustomerResponse(
+            Long id,
+            String customerCode,
+            String fullName,
+            String nationalId,
+            String email,
+            String phone,
+            String address,
+            String location,
+            LocalDate dateOfBirth,
+            Instant createdAt,
+            Instant updatedAt,
+            Long version) {
+        this(
+                id,
+                customerCode,
+                fullName,
+                nationalId,
+                email,
+                phone,
+                address,
+                location,
+                dateOfBirth,
+                createdAt,
+                updatedAt,
+                version,
+                Customer.DEFAULT_CUSTOMER_TYPE_CODE);
+    }
 
     /** Factory method mapping domain entity to response DTO, applying national ID masking. */
     public static CustomerResponse from(Customer customer) {
@@ -43,6 +75,7 @@ public record CustomerResponse(
                 customer.getDateOfBirth(),
                 customer.getCreatedAt(),
                 customer.getUpdatedAt(),
-                customer.getVersion());
+                customer.getVersion(),
+                customer.getCustomerTypeCode());
     }
 }

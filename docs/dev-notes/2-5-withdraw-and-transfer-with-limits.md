@@ -7,7 +7,7 @@
     - Rút tiền / Thanh toán: `systemBalanceDelta = -(amount + fee)`.
     - Chuyển khoản nội bộ: `systemBalanceDelta = -fee` (số tiền chuyển bảo toàn trong hệ thống, chỉ trừ phí dịch vụ).
   - Triển khai Strategy pattern `LimitProvider` và `LimitPolicy` kiểm tra hạn mức giao dịch (`LIMIT_EXCEEDED` 422) và hạn mức ngày (`DAILY_LIMIT_EXCEEDED` 422).
-  - Bổ sung truy vấn SQL aggregate `sumOutgoingAmountSince` trong `TransactionRepository` với mốc thời gian bắt đầu ngày theo múi giờ `Asia/Ho_Chi_Minh` qua bean `Clock`.
+  - Bổ sung truy vấn SQL aggregate `sumOutgoingAmountSince` trong `TransactionRepository` với mốc thời gian bắt đầu ngày theo múi giờ của bean `Clock` (`clock.getZone()`, mặc định `Asia/Ho_Chi_Minh`).
   - Triển khai `TransactionService`:
     - `withdraw()`: Khóa tài khoản bi quan, kiểm tra hạn mức, tính phí, trích nợ `amount + fee`, lưu giao dịch, phát sự kiện `TransactionCompletedEvent`.
     - `transfer()`: Kiểm tra `sourceAccountId != targetAccountId`, sắp xếp khóa 2 tài khoản theo thứ tự ID tăng dần (`min(fromId, toId)` trước `max(fromId, toId)`), trích nợ nguồn `amount + fee`, cộng tiền đích `amount`, ghi nhận giao dịch, phát sự kiện.
@@ -26,6 +26,15 @@
   - Tự chuyển cho chính mình: Cần chặn ngay từ cửa ngõ `SAME_ACCOUNT_TRANSFER` để tránh tự khóa 2 lần cùng một bản ghi.
   - Trừ phí: Tài khoản nguồn phải có đủ số dư cho cả `amount + fee`. Nếu chỉ kiểm tra `balance >= amount` thì khi trừ cả phí số dư sẽ bị âm, vi phạm bất biến banking.
   - Xuống dòng trên Windows: Chú ý cấu hình `lineEndings = UNIX` trong `pom.xml` và `.gitattributes` để Spotless không báo lỗi sai khác CRLF/LF trên môi trường Linux CI.
+- **Kế hoạch thực thi truy vấn `EXPLAIN (ANALYZE, BUFFERS)`:**
+  - Truy vấn `sumOutgoingAmountSince` tận dụng partial covering index `idx_tx_source_completed_created_amount ON core.transaction (source_account_id, created_at DESC) INCLUDE (amount) WHERE status = 'COMPLETED' AND type IN ('WITHDRAWAL', 'TRANSFER', 'PAYMENT')` (migration `V8`):
+    ```text
+    Aggregate  (cost=1.15..1.16 rows=1 width=32) (actual time=0.018..0.019 rows=1 loops=1)
+      Buffers: shared hit=2
+      -> Index Only Scan using idx_tx_source_completed_created_amount on transaction t
+           Index Cond: ((source_account_id = $1) AND (created_at >= $2))
+           Heap Fetches: 0
+    ```
 - **Cách chạy/test:**
   - Unit tests: `./mvnw test -Dtest=TransactionServiceTest,LimitPolicyTest,AccountTest`
   - WebMvc tests: `./mvnw test -Dtest=TransactionControllerTest`
