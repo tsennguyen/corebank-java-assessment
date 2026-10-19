@@ -1,0 +1,31 @@
+# Dev Note 2.6: Transaction Metadata Update and Reversal
+
+- **Tóm tắt:** Cung cấp khả năng cập nhật trường phi tài chính (`PATCH /api/v1/transactions/{id}`) và đảo giao dịch an toàn (`DELETE /api/v1/transactions/{id}`) cho cả 4 nghiệp vụ (`DEPOSIT`, `WITHDRAWAL`, `TRANSFER`, `PAYMENT`). Thiết kế cơ chế khóa tài khoản bi quan theo thứ tự khóa tăng dần chống deadlock (NC-01), bảo vệ bất biến bất biến số dư hệ thống và hoàn phí cho bên chuyển khoản, loại trừ giao dịch đảo khỏi phép tính hạn mức ngày. Mã yêu cầu: `L1-06`. PR: [#16](https://github.com/tsennguyen/corebank-java-assessment/pull/16) (nhánh `feat/2-6-transaction-update-and-reversal`).
+- **Đã làm gì:**
+  - Bổ sung hành vi cập nhật metadata vào domain entity `Transaction`: chỉ cho phép sửa đổi `location` và `description`. Cố tình gửi các trường tài chính / khóa định danh (`amount`, `type`, `sourceAccountId`, `targetAccountId`, `referenceNo`, `timestamp`, `currency`) sẽ bị bắt lỗi `IMMUTABLE_FIELD` (400 Bad Request).
+  - Triển khai phương thức đảo giao dịch `reverseTransaction` tại `TransactionService`:
+    - Kiểm tra giao dịch gốc tồn tại và chưa từng bị đảo (`status != REVERSED` và `existsByReversalOfId == false`), nếu đã đảo trả về `ALREADY_REVERSED` (409 Conflict).
+    - Chặn đảo ngược một giao dịch vốn là giao dịch đảo (`type != REVERSAL`).
+    - Khóa bi quan tài khoản liên quan:
+      - `DEPOSIT`: Khóa tài khoản thụ hưởng. Kiểm tra số dư hiện tại đủ để thu hồi (`balance >= amount`), nếu không đủ trả về `INSUFFICIENT_BALANCE` (422). Trừ tiền tài khoản, `systemBalanceDelta = -amount`.
+      - `WITHDRAWAL` & `PAYMENT`: Khóa tài khoản nguồn. Hoàn trả cả gốc lẫn phí dịch vụ (`amount + fee`), `systemBalanceDelta = +(amount + fee)`.
+      - `TRANSFER`: Khóa cả 2 tài khoản theo thứ tự ID tăng dần (`min(fromId, toId)` trước `max(fromId, toId)`). Kiểm tra tài khoản đích có đủ tiền để thu hồi gốc (`balance >= amount`), nếu không đủ trả về `INSUFFICIENT_BALANCE` (422). Trừ tiền tài khoản đích `amount`, hoàn trả tài khoản nguồn `amount + fee`, `systemBalanceDelta = +fee`.
+    - Đánh dấu giao dịch gốc `REVERSED`.
+    - Tạo bản ghi giao dịch mới có `type = REVERSAL` và `reversalOfId = original.getId()`.
+  - Cập nhật `sumOutgoingAmountSince` trong `TransactionRepository` để chỉ tính các giao dịch chi tiêu (`WITHDRAWAL`, `TRANSFER`, `PAYMENT`), loại trừ các giao dịch đảo khỏi hạn mức ngày.
+  - Viết 244 unit tests và integration test `TransactionReversalIT` trên PostgreSQL Testcontainers.
+- **Vì sao làm vậy:**
+  - **Bảo toàn tính bất biến kế toán (Double-entry / Audit Trail):** Trong ngân hàng, giao dịch đã ghi sổ không bao giờ được xóa cứng (`DELETE SQL`) hoặc sửa đổi số tiền. Đảo giao dịch là tạo một giao dịch đối ứng mới (`type = REVERSAL`) liên kết với giao dịch cũ qua `reversalOfId`, vừa đảm bảo truy vết toàn vẹn, vừa bảo vệ tính khả kiểm toán của sổ cái.
+  - **Khóa thứ tự tăng dần NC-01:** Đảo chuyển khoản động chạm đến cả 2 tài khoản cùng lúc. Khóa theo thứ tự `min(fromId, toId)` → `max(fromId, toId)` triệt tiêu hoàn toàn khả năng Deadlock khi có 2 luồng đồng thời đảo 2 giao dịch hoán vị tài khoản (A→B và B→A).
+  - **Bảo vệ rủi ro thấu chi do đảo giao dịch:** Nếu người nhận trong giao dịch chuyển khoản đã rút hết tiền, việc đảo giao dịch mà trừ tiền âm tài khoản của họ sẽ đẩy ngân hàng vào rủi ro nợ xấu. Do đó hệ thống kiểm tra số dư người nhận trước khi cho phép đảo (`INSUFFICIENT_BALANCE` 422).
+  - **Bảo toàn số dư hệ thống & hoàn phí:** Người chuyển tiền được nhận lại cả phí dịch vụ (`fee`) vì giao dịch bị đảo. Đối với hệ thống, ngân hàng hoàn lại doanh thu phí, nên `systemBalanceDelta = +fee`.
+- **Phương án khác đã cân nhắc:**
+  - *Hard DELETE bản ghi giao dịch:* Hoàn toàn vi phạm quy định kiểm toán ngân hàng và làm mất tính liên tục của số dư sau giao dịch (`balanceAfter`).
+  - *Sửa đổi trực tiếp giao dịch gốc:* Phá vỡ tính bất biến của dữ liệu lịch sử và sai lệch các báo cáo thống kê định kỳ.
+- **Bẫy cần nhớ:**
+  - Trùng số CCCD trong Integration Test Testcontainers: Khi viết các test tích hợp song song/tuần tự trên cùng database container, mọi mã khách hàng, CCCD, số tài khoản phải là duy nhất trên toàn bộ suite để tránh vi phạm Unique Constraint.
+  - Quên hoàn phí dịch vụ: Đảo giao dịch rút tiền hoặc chuyển khoản phải hoàn trả toàn bộ `amount + fee` cho người bị trừ phí ban đầu.
+- **Cách chạy/test:**
+  - Unit tests: `./mvnw test -Dtest=TransactionServiceTest,TransactionTest,TransactionControllerTest`
+  - Integration tests: `./mvnw test -Dtest=TransactionReversalIT`
+  - Toàn bộ suite & kiểm tra style: `./mvnw -B verify -Pci`

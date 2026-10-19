@@ -1,0 +1,131 @@
+spring:
+  application:
+    name: core-banking
+  threads:
+    virtual:
+      enabled: true
+  mvc:
+    problemdetails:
+      enabled: true
+  datasource:
+    hikari:
+      connection-init-sql: "SET lock_timeout = '3s'"
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: core
+  flyway:
+    enabled: true
+    schemas: core
+    default-schema: core
+    locations: classpath:db/migration
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      timeout: 2s
+      repositories:
+        enabled: false
+
+app:
+  business-zone: Asia/Ho_Chi_Minh
+  version: "${APP_VERSION:1.0.0}"
+  redis:
+    enabled: ${APP_REDIS_ENABLED:false}
+  cache:
+    maximum-size: 10000
+    accounts-by-customer-ttl: 10m
+    recent-transactions-ttl: 5m
+    customer-types-ttl: 60m
+    caffeine-accounts-by-customer-ttl: 2m
+    caffeine-recent-transactions-ttl: 1m
+    caffeine-customer-types-ttl: 60m
+  security:
+    jwt:
+      secret: ${JWT_SECRET:corebank-demo-jwt-secret-key-at-least-256-bits-long-2026}
+      access-token-ttl-seconds: ${JWT_ACCESS_TOKEN_TTL_SECONDS:900}
+      refresh-token-ttl-seconds: ${JWT_REFRESH_TOKEN_TTL_SECONDS:604800}
+      issuer: ${JWT_ISSUER:corebank-java-assessment}
+    rate-limit:
+      max-attempts: ${AUTH_RATE_LIMIT_MAX_ATTEMPTS:5}
+      window-seconds: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:300}
+    admin-bootstrap:
+      enabled: ${ADMIN_BOOTSTRAP_ENABLED:true}
+      username: ${ADMIN_BOOTSTRAP_USERNAME:admin}
+      password: ${ADMIN_BOOTSTRAP_PASSWORD:Admin@123}
+  idempotency:
+    ttl-hours: 24
+    cleanup-cron: "0 0 3 * * *"
+  recurring:
+    cron: "0 * * * * *"
+    batch-size: 50
+    max-failures: 3
+    scheduler-enabled: true
+  fraud:
+    amount-threshold: 50000000.00
+    velocity:
+      max-count: 5
+      window-seconds: 60
+  statistics:
+    balance-tiers:
+      medium-threshold: 10000000.00
+      high-threshold: 100000000.00
+  fees:
+    withdrawal:
+      - min-amount: 0.00
+        flat-fee: 2000.00
+      - min-amount: 10000000.00
+        rate-percent: 0.02
+        max-fee: 50000.00
+    transfer:
+      - min-amount: 0.00
+        flat-fee: 0.00
+      - min-amount: 500000.00
+        flat-fee: 2000.00
+      - min-amount: 10000000.00
+        rate-percent: 0.02
+        max-fee: 50000.00
+    deposit:
+      - min-amount: 0.00
+        flat-fee: 0.00
+    payment:
+      - min-amount: 0.00
+        flat-fee: 0.00
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+    display-request-duration: true
+    doc-expansion: none
+
+server:
+  port: 8080
+  shutdown: graceful
+
+management:
+  health:
+    redis:
+      enabled: ${app.redis.enabled:false}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+      roles: ADMIN
+      probes:
+        enabled: true
+    env:
+      enabled: false
+    heapdump:
+      enabled: false
+

@@ -1,0 +1,58 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+      - prod
+  push:
+    branches:
+      - dev
+      - main
+      - prod
+  workflow_dispatch:
+
+# The required status check must report on every PR (docs, frontend, workflows included),
+# so there is no `paths` filter. Superseded PR runs are cancelled; branch runs always finish.
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend-ci:
+    name: Backend CI (Java 21, Spotless, Checkstyle, Tests, JaCoCo)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+          cache-dependency-path: 'backend/pom.xml'
+
+      - name: Ensure Maven Wrapper is executable
+        run: chmod +x mvnw
+
+      - name: Run code formatting & style checks (Spotless & Checkstyle)
+        run: ./mvnw -B spotless:check checkstyle:check
+
+      - name: Build, test, and verify coverage (-Pci)
+        run: ./mvnw -B verify -Pci
+
+      - name: Upload JaCoCo coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-coverage-report
+          path: backend/target/site/jacoco/
+          retention-days: 14

@@ -1,0 +1,34 @@
+# Dev Note 2.7: Idempotency Key Support
+
+- **Tóm tắt:** Triển khai cơ chế khóa Idempotency (`Idempotency-Key` header) cho toàn bộ 4 giao dịch tài chính ghi (`POST /transactions/{deposits|withdrawals|transfers|payments}`). Bảo đảm tính toàn vẹn tài chính, chống trừ tiền hai lần (double spending) khi client gửi lại request do timeout hoặc mạng chập chờn. Lưu trữ nguyên tử trong cùng transaction DB với giao dịch, tự động rollback khi gặp lỗi nghiệp vụ, phát lại kết quả (replay) kèm header `Idempotent-Replayed: true`. Mã yêu cầu: `NC-02`, `FR-9`, `NFR-1`. PR: [#17](https://github.com/tsennguyen/corebank-java-assessment/pull/17) (nhánh `feat/2-7-idempotency-key-support`).
+- **Đã làm gì:**
+  - **DDL Flyway Migration `V6__idempotency_key.sql`:** Tạo bảng `core.idempotency_key` với composite primary key `(idem_key, scope)`, các trường `request_hash`, `response_status`, `response_body` (TEXT), `created_at`, `expires_at`, cùng chỉ mục `idx_idempotency_expires_at` phục vụ dọn dẹp định kỳ.
+  - **Module Idempotency (`com.example.corebanking.common.idempotency`):**
+    - `IdempotencyKey`: Entity ánh xạ bảng `core.idempotency_key`.
+    - `IdempotencyKeyId`: Composite key `(idemKey, scope)`. Scope mặc định `"DEFAULT"`, chuẩn bị sẵn sàng cho username/JWT ở Level 2.
+    - `IdempotencyRepository`: Repository cung cấp `findById`, `acquireAdvisoryLock` (`pg_advisory_xact_lock`), và `deleteExpiredKeys`.
+    - `IdempotencyService`: Xử lý toàn bộ vòng đời: kiểm tra tính hợp lệ của key, tính mã băm canonical SHA-256 (`method:path:canonicalJson`), khóa tư vấn phòng ngừa race condition giữa các request đồng thời, trả về bản replay nếu payload khớp, ném `IDEMPOTENCY_KEY_REUSED` (422) nếu payload khác, và ghi nhận kết quả phản hồi vào DB trong cùng active transaction.
+    - `IdempotencyCleanupScheduler`: Job `@Scheduled` (mặc định 03:00 sáng mỗi ngày) xóa các key đã hết hạn (`expires_at < now`).
+  - **Tích hợp Controller & GlobalExceptionHandler:**
+    - Cập nhật `TransactionController`: cả 4 endpoint ghi đều nhận header `@RequestHeader(value = "Idempotency-Key", required = false)`. Bổ sung kiểm tra header không được null/blank, ném 400 `IDEMPOTENCY_KEY_MISSING` (RFC 9457 `ProblemDetail`). Khi phát lại từ cache, gắn header `Idempotent-Replayed: true`.
+    - `GlobalExceptionHandler`: Bổ sung xử lý `MissingRequestHeaderException` cho `Idempotency-Key` trả về 400 RFC 9457 `ProblemDetail`.
+  - **Tích hợp TransactionService:**
+    - Bổ sung các overload nhận `idempotencyKey` cho `deposit`, `withdraw`, `transfer`, `payment` ủy quyền qua `IdempotencyService.execute()`. Giữ nguyên các overload cũ để bảo toàn tương thích ngược cho các service nội bộ.
+  - **Kiểm thử:**
+    - 295 dòng unit test trong `IdempotencyServiceTest` (hash determinism, cache replay, mismatch payload detection, exception rollback, scheduler invocation).
+    - Cập nhật toàn diện `TransactionControllerTest` kiểm tra mã lỗi 400 khi thiếu/trống key, 201 kèm header replay, 422 khi sai payload.
+    - `IdempotencyIntegrationTest` trên PostgreSQL Testcontainers kiểm tra thực tế: chuyển khoản lần 1 trừ tiền, replay lần 2 không trừ tiền hai lần; lỗi số dư không đủ làm rollback key cho phép thử lại thành công sau khi nạp tiền.
+- **Vì sao làm vậy:**
+  - **Nguyên tử trong RDBMS (ADR-006):** Thay vì dùng Redis `SETNX` dễ bị bài toán dual-write bất đồng bộ (trừ tiền thành công nhưng ghi Redis fail hoặc ngược lại), việc lưu bảng `core.idempotency_key` trong CÙNG database transaction với `core.account` và `core.transaction` bảo đảm tính nhất quán tuyệt đối của ACID: hoặc cả giao dịch và key cùng thành công, hoặc nếu giao dịch fail thì key tự động biến mất theo rollback.
+  - **Canonical Request Hashing:** Chuỗi JSON thô có thể khác nhau về khoảng trắng hay thứ tự key. Bằng cách tuần tự hóa DTO Java đã parse thành JSON chuẩn rồi mới tính SHA-256 (`HTTP_METHOD + ":" + PATH + ":" + canonicalJson`), hệ thống tránh được các cảnh báo sai lệch (false positive) `IDEMPOTENCY_KEY_REUSED`.
+  - **Phòng thủ đa tầng chống Race Condition (Defense-in-Depth):** Kết hợp PostgreSQL Advisory Lock (`pg_advisory_xact_lock`) theo key và Unique Constraint trên cặp `(idem_key, scope)` giúp các request gửi cùng một mili-giây được tuần tự hóa an toàn, request đến sau sẽ chờ và nhận kết quả replay của request đến trước.
+- **Phương án khác đã cân nhắc:**
+  - *Redis Distributed Lock + Caching:* Nhanh nhưng không bảo đảm tính nguyên tử với database transaction khi xảy ra sự cố mạng chập chờn hoặc rollback nghiệp vụ.
+  - *Chỉ dùng Unique Constraint mà không có Advisory Lock:* Khi 2 request cùng bay vào, một request sẽ bị `DataIntegrityViolationException` ném lỗi 500 hoặc 409 ra ngoài thay vì trả về kết quả replay 201 một cách mượt mà cho client.
+- **Bẫy cần nhớ:**
+  - Trùng lặp dữ liệu trên Testcontainers shared container: Các integration test phải dùng mã khách hàng, CCCD và số tài khoản duy nhất để không vi phạm ràng buộc toàn vẹn của các test chạy trước.
+  - Xử lý key khi nghiệp vụ ném lỗi: Không bao giờ được lưu trạng thái thất bại nghiệp vụ vĩnh viễn vào key, mà phải để transaction rollback tự nhiên để khách hàng có thể sửa thông tin và bấm gửi lại với cùng key.
+- **Cách chạy/test:**
+  - Unit tests: `./mvnw test -Dtest=IdempotencyServiceTest,TransactionControllerTest`
+  - Integration tests: `./mvnw test -Dtest=IdempotencyIntegrationTest`
+  - Toàn bộ suite & kiểm tra style: `./mvnw -B verify -Pci`

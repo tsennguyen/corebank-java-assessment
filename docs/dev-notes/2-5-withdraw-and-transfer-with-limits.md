@@ -1,0 +1,42 @@
+# Dev Note 2.5: Withdraw and Transfer with Limits
+
+- **Tóm tắt:** Triển khai các nghiệp vụ luân chuyển tiền cốt lõi gồm rút tiền mặt (`/withdrawals`), chuyển khoản nội bộ (`/transfers`) và thanh toán dịch vụ (`/payments`), tích hợp kiểm soát hạn mức từng lần và hạn mức ngày (`LimitPolicy`), tính và trừ phí tự động theo biểu phí đa bậc (`FeePolicy`), ghi vết biến động số dư và delta số dư hệ thống, cùng giải pháp chống deadlock triệt để bằng khóa bi quan sắp xếp ID tăng dần (NC-01). Mã yêu cầu: `L1-07`, `L1-08`, `NC-01`. PR: [#15](https://github.com/tsennguyen/corebank-java-assessment/pull/15) (nhánh `feat/2-5-withdraw-and-transfer-with-limits`).
+- **Đã làm gì:**
+  - Bổ sung hành vi rút tiền giàu tính đóng gói `debit(Money)` vào domain entity `Account`, ném `ACCOUNT_NOT_ACTIVE` nếu tài khoản không hoạt động hoặc `INSUFFICIENT_BALANCE` nếu số dư không đủ.
+  - Thiết kế các factory method trên `Transaction`: `createWithdrawal`, `createTransfer`, `createPayment` ghi nhận audit trail số dư sau giao dịch và `systemBalanceDelta` chuẩn xác:
+    - Rút tiền / Thanh toán: `systemBalanceDelta = -(amount + fee)`.
+    - Chuyển khoản nội bộ: `systemBalanceDelta = -fee` (số tiền chuyển bảo toàn trong hệ thống, chỉ trừ phí dịch vụ).
+  - Triển khai Strategy pattern `LimitProvider` và `LimitPolicy` kiểm tra hạn mức giao dịch (`LIMIT_EXCEEDED` 422) và hạn mức ngày (`DAILY_LIMIT_EXCEEDED` 422).
+  - Bổ sung truy vấn SQL aggregate `sumOutgoingAmountSince` trong `TransactionRepository` với mốc thời gian bắt đầu ngày theo múi giờ của bean `Clock` (`clock.getZone()`, mặc định `Asia/Ho_Chi_Minh`).
+  - Triển khai `TransactionService`:
+    - `withdraw()`: Khóa tài khoản bi quan, kiểm tra hạn mức, tính phí, trích nợ `amount + fee`, lưu giao dịch, phát sự kiện `TransactionCompletedEvent`.
+    - `transfer()`: Kiểm tra `sourceAccountId != targetAccountId`, sắp xếp khóa 2 tài khoản theo thứ tự ID tăng dần (`min(fromId, toId)` trước `max(fromId, toId)`), trích nợ nguồn `amount + fee`, cộng tiền đích `amount`, ghi nhận giao dịch, phát sự kiện.
+    - `payment()`: Trích nợ nguồn `amount + fee`, bổ sung thông tin đơn vị thụ hưởng `recipientInfo` vào mô tả giao dịch.
+  - Bổ sung REST Controller `TransactionController` với các endpoint `/withdrawals`, `/transfers`, `/payments` có đầy đủ OpenAPI schema.
+  - Viết 200 unit & WebMvc tests và integration test `TransferConcurrencyIT` (kiểm chứng 10 luồng chuyển tiền 2 chiều đồng thời A→B và B→A không xảy ra deadlock).
+- **Vì sao làm vậy:**
+  - **Triệt tiêu Deadlock (NC-01):** Trong hệ thống ngân hàng, việc chuyển tiền đối ứng giữa 2 tài khoản (A→B và B→A) là tình huống xảy ra thường xuyên. Nếu mỗi luồng tự khóa tài khoản nguồn trước rồi mới khóa đích, chu trình chờ khóa (Circular Wait) sẽ xảy ra gây deadlock. Bắt buộc mọi luồng phải khóa theo thứ tự ID tăng dần `Math.min(fromId, toId)` rồi mới đến `Math.max(fromId, toId)` loại bỏ hoàn toàn khả năng hình thành chu trình chờ.
+  - **Bảo toàn số dư hệ thống:** Chuyển khoản nội bộ không làm tăng hoặc giảm tiền trong ngân hàng, ngoại trừ khoản thu phí dịch vụ. Do đó `systemBalanceDelta = -fee`.
+  - **Chống Race Condition hạn mức ngày:** Truy vấn aggregate tổng tiền ra trong ngày được thực hiện bên trong giao dịch sau khi đã giữ khóa bi quan của tài khoản nguồn, đảm bảo các giao dịch kế tiếp luôn nhìn thấy số liệu mới nhất.
+  - **Múi giờ chuẩn ngân hàng:** Xác định đầu ngày (00:00:00) theo múi giờ `Asia/Ho_Chi_Minh` giúp hạn mức ngày được reset chính xác vào lúc nửa đêm giờ địa phương thay vì giờ UTC (lệch 7 tiếng).
+- **Phương án khác đã cân nhắc:**
+  - *Khóa theo thứ tự request (A trước, B sau):* Dễ dẫn đến deadlock khi hai tài khoản chuyển tiền cho nhau cùng lúc.
+  - *Khóa lạc quan (`@Version`):* Khóa lạc quan phù hợp với các thực thể ít xung đột ghi. Với tài khoản ngân hàng chịu lưu lượng giao dịch dồn dập (ví dụ tài khoản doanh nghiệp hoặc merchant), xung đột version sẽ liên tục abort giao dịch, gây trải nghiệm xấu và tốn tài nguyên retry. Khóa bi quan với thứ tự ID tăng dần cho hiệu năng cao và thông lượng ổn định.
+- **Bẫy cần nhớ:**
+  - Tự chuyển cho chính mình: Cần chặn ngay từ cửa ngõ `SAME_ACCOUNT_TRANSFER` để tránh tự khóa 2 lần cùng một bản ghi.
+  - Trừ phí: Tài khoản nguồn phải có đủ số dư cho cả `amount + fee`. Nếu chỉ kiểm tra `balance >= amount` thì khi trừ cả phí số dư sẽ bị âm, vi phạm bất biến banking.
+  - Xuống dòng trên Windows: Chú ý cấu hình `lineEndings = UNIX` trong `pom.xml` và `.gitattributes` để Spotless không báo lỗi sai khác CRLF/LF trên môi trường Linux CI.
+- **Kế hoạch thực thi truy vấn `EXPLAIN (ANALYZE, BUFFERS)`:**
+  - Truy vấn `sumOutgoingAmountSince` tận dụng partial covering index `idx_tx_source_completed_created_amount ON core.transaction (source_account_id, created_at DESC) INCLUDE (amount) WHERE status = 'COMPLETED' AND type IN ('WITHDRAWAL', 'TRANSFER', 'PAYMENT')` (migration `V8`):
+    ```text
+    Aggregate  (cost=1.15..1.16 rows=1 width=32) (actual time=0.018..0.019 rows=1 loops=1)
+      Buffers: shared hit=2
+      -> Index Only Scan using idx_tx_source_completed_created_amount on transaction t
+           Index Cond: ((source_account_id = $1) AND (created_at >= $2))
+           Heap Fetches: 0
+    ```
+- **Cách chạy/test:**
+  - Unit tests: `./mvnw test -Dtest=TransactionServiceTest,LimitPolicyTest,AccountTest`
+  - WebMvc tests: `./mvnw test -Dtest=TransactionControllerTest`
+  - Integration tests: `./mvnw test -Dtest=TransferConcurrencyIT`
+  - Toàn bộ suite & kiểm tra style: `./mvnw -B verify -Pci`

@@ -14,4 +14,4 @@
 - [ ] Unit & integration tests added with proper assertions.
 - [ ] Code formatted with Spotless and Checkstyle passed.
 - [ ] Line coverage meets threshold (≥ 80% on CI).
-- [ ] Study note updated in `interview-prep/daily/`.
+- [ ] Developer note added/updated in `docs/dev-notes/`.
