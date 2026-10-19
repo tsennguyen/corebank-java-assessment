@@ -42,7 +42,7 @@ SELECT
 
 | Quyết định | Phương án lựa chọn | Phương án bị loại & Lý do |
 |---|---|---|
-| **Tài khoản dùng để seed giao dịch bất thường (`TXN-SEED-0017..0023`)** | Dùng cặp tài khoản doanh nghiệp `100800000109` ⇄ `100800000091` (chuyển khoản nội bộ 0 phí) | Seed vào tài khoản cá nhân `100800000018` (`cust.an`): làm thay đổi số lượng giao dịch của `cust.an` và phá vỡ các bài kiểm thử tích hợp `OwnershipIntegrationTest` / `TransactionSearchIntegrationTest`. |
+| **Tài khoản dùng để seed giao dịch bất thường (`TXN-SEED-0017..0023`)** | Dùng cặp tài khoản doanh nghiệp `100800000109` ⇄ `100800000091` (áp dụng đúng biểu phí bậc thang `22.000 VND` tổng phí) | Seed vào tài khoản cá nhân `100800000018` (`cust.an`): làm thay đổi số lượng giao dịch của `cust.an` và phá vỡ các bài kiểm thử tích hợp `OwnershipIntegrationTest` / `TransactionSearchIntegrationTest`. |
 | **Cơ chế nạp dữ liệu demo (`R__demo_seed.sql`)** | Flyway Repeatable Migration (`ON CONFLICT DO NOTHING` + `setval` đồng bộ sequence) | Chạy script ngoài bằng tay: không tự động áp dụng khi container khởi động mới trên Docker Compose hoặc Render. |
 
 ---

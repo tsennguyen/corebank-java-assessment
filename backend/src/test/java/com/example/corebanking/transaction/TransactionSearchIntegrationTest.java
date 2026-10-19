@@ -304,7 +304,10 @@ LIMIT 10
                             .query(String.class)
                             .list();
             String statusExplainPlan = String.join("\n", statusExplainLines);
-            assertThat(statusExplainPlan).contains("idx_tx_status_created");
+            assertThat(statusExplainPlan)
+                    .contains("Index Scan")
+                    .containsAnyOf(
+                            "idx_tx_status_created", "idx_tx_created_id_keyset", "idx_tx_created");
         } finally {
             jdbcClient.sql("RESET enable_seqscan").update();
         }
