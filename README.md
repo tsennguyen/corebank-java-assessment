@@ -11,9 +11,9 @@
 Hệ thống ngân hàng lõi (**Core Banking REST API**) xây dựng theo kiến trúc **Modular Monolith** trên nền tảng **Java 21 Virtual Threads**, **Spring Boot 3.5.16**, **PostgreSQL 17** và **Redis 7**. Hệ thống đảm bảo tính toàn vẹn tiền tệ tuyệt đối (`ACID`), chống Deadlock bằng khóa bi quan thứ tự ID tăng dần, chống trừ tiền hai lần bằng `Idempotency-Key`, phân quyền JWT + xoay vòng Refresh Token, tự động hóa giao dịch định kỳ, phát hiện giao dịch bất thường thời gian thực và kết xuất báo cáo tài chính (`.xlsx` & `.pdf`) kèm biểu đồ xu hướng.
 
 ## Bản demo trực tuyến
-- Giao diện vận hành: https://root1.tailc1340f.ts.net:10000/
-- Swagger UI: https://root1.tailc1340f.ts.net:10000/swagger-ui/index.html
-- Health check: https://root1.tailc1340f.ts.net:10000/actuator/health
+- Giao diện vận hành: https://tsennguyen.tailc1340f.ts.net:10000/
+- Swagger UI: https://tsennguyen.tailc1340f.ts.net:10000/swagger-ui/index.html
+- Health check: https://tsennguyen.tailc1340f.ts.net:10000/actuator/health
 - Tài khoản thử nghiệm được gửi kèm email nộp bài. Dữ liệu là dữ liệu giả lập, tự khôi phục về trạng thái ban đầu lúc 03:30 (GMT+7) mỗi ngày.
 
 ## Kiểm thử nhanh
