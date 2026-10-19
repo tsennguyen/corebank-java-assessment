@@ -46,4 +46,21 @@ public interface TransactionRepository
             @Param("accountId") Long accountId,
             @Param("status") TransactionStatus status,
             @Param("since") Instant since);
+
+    @Query(
+            "SELECT t FROM Transaction t WHERE t.sourceAccountId = :accountId OR"
+                    + " t.targetAccountId = :accountId ORDER BY t.createdAt DESC, t.id DESC")
+    java.util.List<Transaction> findKeysetFirstPage(
+            @Param("accountId") Long accountId, Pageable limit);
+
+    @Query(
+            "SELECT t FROM Transaction t WHERE (t.sourceAccountId = :accountId OR"
+                    + " t.targetAccountId = :accountId) AND (t.createdAt < :cursorCreatedAt OR"
+                    + " (t.createdAt = :cursorCreatedAt AND t.id < :cursorId)) ORDER BY"
+                    + " t.createdAt DESC, t.id DESC")
+    java.util.List<Transaction> findKeysetAfterCursor(
+            @Param("accountId") Long accountId,
+            @Param("cursorCreatedAt") Instant cursorCreatedAt,
+            @Param("cursorId") Long cursorId,
+            Pageable limit);
 }

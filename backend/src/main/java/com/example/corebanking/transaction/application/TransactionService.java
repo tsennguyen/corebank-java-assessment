@@ -1241,4 +1241,53 @@ public class TransactionService {
                             .register(meterRegistry));
         }
     }
+
+    /**
+     * Retrieves cursor-paginated (keyset) transaction history for a specific account ordered by
+     * {@code (createdAt DESC, id DESC)} without {@code OFFSET} degradation (Story 6.1: NC-13, G-05,
+     * L2-04).
+     *
+     * @param accountId target account database ID
+     * @param cursor optional opaque Base64URL cursor {@code createdAt|id} from previous page
+     * @param size page size (1..100)
+     * @return cursor page response with {@code nextCursor} and {@code hasNext}
+     */
+    public com.example.corebanking.common.api.CursorPageResponse<TransactionResponse>
+            getAccountTransactionsByCursor(
+                    Long accountId, @org.springframework.lang.Nullable String cursor, int size) {
+        if (!accountRepository.existsById(accountId)) {
+            throw new ResourceNotFoundException("Account", accountId);
+        }
+        if (size < 1 || size > 100) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED, "Page size must be between 1 and 100");
+        }
+
+        Pageable limitPlusOne = PageRequest.of(0, size + 1);
+        List<Transaction> rows;
+        if (cursor == null || cursor.isBlank()) {
+            rows = transactionRepository.findKeysetFirstPage(accountId, limitPlusOne);
+        } else {
+            com.example.corebanking.common.api.CursorPageResponse.DecodedCursor decoded =
+                    com.example.corebanking.common.api.CursorPageResponse.decodeCursor(cursor);
+            rows =
+                    transactionRepository.findKeysetAfterCursor(
+                            accountId, decoded.createdAt(), decoded.id(), limitPlusOne);
+        }
+
+        boolean hasNext = rows.size() > size;
+        List<Transaction> pageRows = hasNext ? rows.subList(0, size) : rows;
+        String nextCursor = null;
+        if (hasNext && !pageRows.isEmpty()) {
+            Transaction last = pageRows.get(pageRows.size() - 1);
+            nextCursor =
+                    com.example.corebanking.common.api.CursorPageResponse.encodeCursor(
+                            last.getCreatedAt(), last.getId());
+        }
+
+        List<TransactionResponse> content =
+                pageRows.stream().map(TransactionResponse::from).toList();
+        return new com.example.corebanking.common.api.CursorPageResponse<>(
+                content, size, nextCursor, hasNext);
+    }
 }

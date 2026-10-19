@@ -122,4 +122,29 @@ class AccountTransactionControllerTest {
                 .andExpect(jsonPath("$.status").value(403))
                 .andExpect(jsonPath("$.code").value("ACCESS_DENIED"));
     }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/accounts/{id}/transactions/cursor and ?cursor= return 200 with"
+                    + " CursorPageResponse (Story 6.1)")
+    void getAccountTransactionsByCursor_shouldReturn200() throws Exception {
+        var cursorPage =
+                new com.example.corebanking.common.api.CursorPageResponse<TransactionResponse>(
+                        List.of(), 50, null, false);
+        when(transactionService.getAccountTransactionsByCursor(eq(10L), any(), eq(50)))
+                .thenReturn(cursorPage);
+
+        mockMvc.perform(get("/api/v1/accounts/10/transactions/cursor").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(50))
+                .andExpect(jsonPath("$.hasNext").value(false));
+
+        mockMvc.perform(
+                        get("/api/v1/accounts/10/transactions")
+                                .param("cursor", "")
+                                .param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size").value(50))
+                .andExpect(jsonPath("$.hasNext").value(false));
+    }
 }

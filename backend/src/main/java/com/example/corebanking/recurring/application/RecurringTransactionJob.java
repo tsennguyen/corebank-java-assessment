@@ -21,6 +21,7 @@ public class RecurringTransactionJob {
     private final RecurringExecutor recurringExecutor;
     private final RecurringProperties properties;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public RecurringTransactionJob(
             RecurringExecutor recurringExecutor, RecurringProperties properties) {
         this.recurringExecutor = recurringExecutor;
@@ -39,7 +40,7 @@ public class RecurringTransactionJob {
         if (!properties.isSchedulerEnabled()) {
             return;
         }
-        runDueTransactions();
+        runClusterLockedDueTransactions();
     }
 
     /**
@@ -72,5 +73,45 @@ public class RecurringTransactionJob {
             log.info("RecurringTransactionJob completed batch [processed={}]", processedCount);
         }
         return processedCount;
+    }
+
+    public static final String LOCK_NAME = "recurringTransactionJob";
+    private static final java.time.Duration LOCK_AT_MOST_FOR = java.time.Duration.ofMinutes(5);
+    private static final java.time.Duration LOCK_AT_LEAST_FOR = java.time.Duration.ofSeconds(10);
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.lang.Nullable
+    private com.example.corebanking.common.scheduler.SchedulerLockService schedulerLockService;
+
+    private String instanceId = "node-" + java.util.UUID.randomUUID();
+
+    public RecurringTransactionJob(
+            RecurringExecutor recurringExecutor,
+            RecurringProperties properties,
+            @org.springframework.lang.Nullable
+                    com.example.corebanking.common.scheduler.SchedulerLockService
+                            schedulerLockService,
+            String instanceId) {
+        this.recurringExecutor = recurringExecutor;
+        this.properties = properties;
+        this.schedulerLockService = schedulerLockService;
+        this.instanceId = instanceId;
+    }
+
+    /**
+     * Acquires the cluster-wide {@code recurringTransactionJob} lock in {@code core.shedlock}
+     * ({@code lockAtMostFor = PT5M}, {@code lockAtLeastFor = PT10S}) before running due
+     * instructions, ensuring at-most-once cron firing per cluster tick (Story 6.2: NC-13, L2-07).
+     */
+    public int runClusterLockedDueTransactions() {
+        if (schedulerLockService == null) {
+            return runDueTransactions();
+        }
+        return schedulerLockService.executeWithLock(
+                LOCK_NAME,
+                LOCK_AT_MOST_FOR,
+                LOCK_AT_LEAST_FOR,
+                instanceId,
+                this::runDueTransactions);
     }
 }

@@ -4,6 +4,7 @@ import com.example.corebanking.auth.domain.RateLimitExceededException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +29,12 @@ public class LoginRateLimiter {
     private static final Logger log = LoggerFactory.getLogger(LoginRateLimiter.class);
 
     private static final String KEY_PREFIX = "rl:login:";
+    private static final DefaultRedisScript<Long> INCREMENT_WITH_EXPIRE_SCRIPT =
+            new DefaultRedisScript<>(
+                    "local c = redis.call('INCR', KEYS[1]);"
+                            + " if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]); end;"
+                            + " return c;",
+                    Long.class);
 
     private final SecurityProperties securityProperties;
     private final Clock clock;
@@ -120,9 +128,16 @@ public class LoginRateLimiter {
 
         if (redisEnabled) {
             try {
-                Long count = redisTemplate.opsForValue().increment(key);
-                if (count != null && count == 1L) {
-                    redisTemplate.expire(key, Duration.ofSeconds(windowSeconds));
+                Long scriptedCount =
+                        redisTemplate.execute(
+                                INCREMENT_WITH_EXPIRE_SCRIPT,
+                                List.of(key),
+                                String.valueOf(windowSeconds));
+                if (scriptedCount == null) {
+                    Long count = redisTemplate.opsForValue().increment(key);
+                    if (count != null && count == 1L) {
+                        redisTemplate.expire(key, Duration.ofSeconds(windowSeconds));
+                    }
                 }
             } catch (RuntimeException ex) {
                 log.warn(
