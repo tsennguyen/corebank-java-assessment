@@ -28,7 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Streaming Excel report export (`GET /api/v1/reports/export?format=XLSX`, 3 sheets `Tong hop`, `Chi tiet`, `Bieu do` with embedded PNG charts) using `SXSSFWorkbook(100)`, JDBC cursor streaming (`fetchSize = 1000`), and `StreamingResponseBody` (#39).
   - Streaming PDF report export (`GET /api/v1/reports/export?format=PDF`) using `OpenPDF 2.0.2` with embedded `DejaVuSans` Vietnamese Unicode fonts, 3 embedded PNG trend charts, and a 1,000-row detail table cap (#41).
   - Spring Boot Actuator security hardening, custom Micrometer business metrics (`banking.transactions`, `banking.alerts.raised`, `banking.recurring.executed`), Java 21 Virtual Threads anti-pinning verification (`ReentrantLock`), and bounded HikariCP pool sizing (#40).
-- **Delivery, Coverage & Security Scanning:**
+- **Delivery, Operations Console, Coverage & Security Scanning:**
+  - Interactive Web Operations Console (`frontend/index.html`, `frontend/app.js`, and embedded Spring Boot static assets) supporting 1-click role switching (`ADMIN`/`CUSTOMER`), in-memory JWT + automatic `401` refresh rotation, fee preview, idempotency replay verification, multi-filter transaction search, fraud alert FSM + historical window scan, and authenticated Excel/PDF report downloads (#44).
   - Automated GitHub Pages JaCoCo coverage report publication (`coverage-pages.yml`), CodeQL SAST & Dependency Vulnerability Review (`security.yml`), and weekly Dependabot configuration (`dependabot.yml`) (#43).
   - Complete Vietnamese technical documentation (`README.md`, `docs/architecture.md`, `docs/erd.md`, `docs/adr.md` `ADR-001`–`ADR-015`, and `docs/dev-notes/`) (#42).
 

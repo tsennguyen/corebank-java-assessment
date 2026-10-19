@@ -125,6 +125,52 @@ class DeploymentConfigTest {
                 .contains("dependencies");
     }
 
+    @Test
+    @DisplayName(
+            "Operations Console static assets should be synchronized between frontend/ and"
+                    + " classpath:/static/ and wire all Level 1-3 API endpoints")
+    void shouldPackageSynchronizedOperationsConsoleAssets() throws Exception {
+        String frontendHtml =
+                Files.readString(
+                        resolveRepoRootFile("frontend/index.html"), StandardCharsets.UTF_8);
+        String staticHtml =
+                Files.readString(
+                        resolveBackendFile("src/main/resources/static/index.html"),
+                        StandardCharsets.UTF_8);
+        String frontendJs =
+                Files.readString(resolveRepoRootFile("frontend/app.js"), StandardCharsets.UTF_8);
+        String staticJs =
+                Files.readString(
+                        resolveBackendFile("src/main/resources/static/app.js"),
+                        StandardCharsets.UTF_8);
+
+        assertThat(staticHtml).isEqualTo(frontendHtml);
+        assertThat(staticJs).isEqualTo(frontendJs);
+        assertThat(frontendHtml)
+                .contains("Core Banking System — Operations Console")
+                .contains("quickLogin('admin'")
+                .contains("quickLogin('cust.an'")
+                .contains("quickLogin('cust.binh'")
+                .contains("previewFee()")
+                .contains("submitTransaction()")
+                .contains("runHistoricalFraudScan()")
+                .contains("exportFile('XLSX')")
+                .contains("exportFile('PDF')");
+        assertThat(frontendJs)
+                .contains("function esc(")
+                .contains("/api/v1/auth/login")
+                .contains("/api/v1/auth/refresh")
+                .contains("/api/v1/fees/preview")
+                .contains("/api/v1/statistics/balance-tiers")
+                .contains("/api/v1/statistics/customers-by-location")
+                .contains("/api/v1/reports/transactions")
+                .contains("/api/v1/reports/trends")
+                .contains("/api/v1/reports/export")
+                .contains("/api/v1/alerts")
+                .contains("/api/v1/fraud/scans")
+                .contains("Idempotent-Replayed");
+    }
+
     private static Path resolveBackendFile(String relativePath) {
         Path cwd = Path.of("").toAbsolutePath();
         if (Files.exists(cwd.resolve(relativePath))) {
