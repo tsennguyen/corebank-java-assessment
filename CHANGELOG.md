@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-19
+
+### Added
+- **Level 2 — Security, Search & Automation:**
+  - Stateless JWT authentication (`HS256`), role-based access control (`ADMIN`, `CUSTOMER`), user-scoped `Idempotency-Key` isolation, and `AdminBootstrapRunner` (`V7__app_user.sql`, #25).
+  - Level 1 concurrency, idempotency 64-bit advisory lock, `PATCH` immutable-field protection (`@JsonAnySetter`), and partial covering index `idx_tx_source_completed_created_amount` (`V8`, #26).
+  - Customer self-service endpoints (`GET /api/v1/me`, `GET /api/v1/me/accounts`) and `OwnershipGuard` IDOR protection across accounts and transactions (#27).
+  - Multi-filter transaction search (`status`, `minAmount`, `maxAmount`, `fromDate`, `toDate` in `Asia/Ho_Chi_Minh`) with composite indexes `idx_tx_status_created` and `idx_tx_amount_created` (`V9`, #28).
+  - Account status lifecycle FSM (`ACTIVE ⇄ LOCKED → CLOSED`) with immutable audit trail `core.account_status_history` (`V10`, #29).
+  - Recurring transaction setup (`DAILY`, `WEEKLY`, `MONTHLY` with end-of-month anchor clamping), closure guard (`409 ACCOUNT_HAS_ACTIVE_RECURRING`), and multi-worker scheduler using `FOR UPDATE SKIP LOCKED` + `REQUIRES_NEW` transaction isolation (`V11`, #30, #31).
+  - Two-tier query caching (`Redis 7` + automatic `Caffeine` / DB fallback via `ResilientCacheErrorHandler`) and `AFTER_COMMIT` cache eviction (#32).
+  - Opaque 256-bit refresh token rotation (`SHA-256` hashed storage), token family reuse detection (`401 TOKEN_REUSED`), and pre-BCrypt login rate limiting (`429 TOO_MANY_REQUESTS` with `Retry-After`) (#33).
+- **Level 3 — Analytics, Fraud Detection, Report Exports & Observability:**
+  - Customer classification (`INDIVIDUAL`, `BUSINESS`) with configurable ceiling limits and `CustomerTypeLimitProvider` enforcing $\min(\text{accountLimit}, \text{customerTypeMaxLimit})$ (`V12`, #34).
+  - Periodic transaction reports (`WEEK`, `QUARTER`, `YEAR`) aggregated via PostgreSQL `date_trunc` in `Asia/Ho_Chi_Minh` (#35).
+  - Real-time anomaly detection on Java 21 Virtual Threads (`@Async` + `AFTER_COMMIT`) for `AMOUNT_THRESHOLD` ($\ge 50\text{M VND}$) and `VELOCITY` ($> 5\text{ outgoing tx} / 60\text{s}$ via Redis `ZSET` / `ArrayDeque` + `ReentrantLock`) (`V13__alert.sql`, #36).
+  - Alert management API (`GET/POST /api/v1/alerts` with status FSM `NEW -> INVESTIGATING -> RESOLVED | FALSE_POSITIVE`) and historical batch fraud scan (`POST /api/v1/fraud/scans`) using PostgreSQL `RANGE ... PRECEDING` window functions (#37).
+  - System and per-account trend series (`GET /api/v1/reports/trends` using `generate_series` and reverse cumulative window functions) and headless `JFreeChart` PNG rendering (`800x400`) (#38).
+  - Streaming Excel report export (`GET /api/v1/reports/export?format=XLSX`, 3 sheets `Tong hop`, `Chi tiet`, `Bieu do` with embedded PNG charts) using `SXSSFWorkbook(100)`, JDBC cursor streaming (`fetchSize = 1000`), and `StreamingResponseBody` (#39).
+  - Streaming PDF report export (`GET /api/v1/reports/export?format=PDF`) using `OpenPDF 2.0.2` with embedded `DejaVuSans` Vietnamese Unicode fonts, 3 embedded PNG trend charts, and a 1,000-row detail table cap (#41).
+  - Spring Boot Actuator security hardening, custom Micrometer business metrics (`banking.transactions`, `banking.alerts.raised`, `banking.recurring.executed`), Java 21 Virtual Threads anti-pinning verification (`ReentrantLock`), and bounded HikariCP pool sizing (#40).
+- **Delivery, Coverage & Security Scanning:**
+  - Automated GitHub Pages JaCoCo coverage report publication (`coverage-pages.yml`), CodeQL SAST & Dependency Vulnerability Review (`security.yml`), and weekly Dependabot configuration (`dependabot.yml`).
+  - Complete Vietnamese technical documentation (`README.md`, `docs/architecture.md`, `docs/erd.md`, `docs/adr.md` `ADR-001`–`ADR-015`, and `docs/dev-notes/`) (#42).
+
 ## [0.1.0] - 2026-10-14
 
 ### Added
@@ -22,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Withdrawal, transfer, and payment APIs with pre-debit transaction/daily limit enforcement (`Asia/Ho_Chi_Minh`) and deadlock-free ascending account ID lock ordering (#15).
 - Transaction metadata update (`PATCH /api/v1/transactions/{id}`) and double-entry compensating reversal (`DELETE /api/v1/transactions/{id}`) (#16).
 - RDBMS-backed `Idempotency-Key` protection with PostgreSQL transaction-scoped advisory locks, SHA-256 canonical payload hashing, response replay (`Idempotent-Replayed: true`), and 24h TTL cleanup scheduler (#17).
-- 100-thread concurrent multi-account transfer stress test on PostgreSQL 17 Testcontainers (`TransferConcurrencyIT`) verifying zero deadlocks and strict conservation of funds + fees (#19).
+- Concurrent multi-account transfer stress test on PostgreSQL 17 Testcontainers (`TransferConcurrencyIT`: 100 concurrent transfers across 25 worker threads over 10 accounts plus 10 bidirectional threads) verifying zero deadlocks and strict conservation of funds + fees (#19).
 - SQL-aggregated balance tier statistics (`GET /api/v1/statistics/balance-tiers`), customer location statistics (`GET /api/v1/statistics/customers-by-location`), and idempotent demo seed data (`R__demo_seed.sql`) (#20).
 - Multi-stage layered `backend/Dockerfile` (Temurin 21 JRE, non-root `appuser`, `fontconfig`), 1-command `docker-compose.yml` stack, `render.yaml` Blueprint, and `.github/workflows/cd.yml` container smoke test (#21).
 

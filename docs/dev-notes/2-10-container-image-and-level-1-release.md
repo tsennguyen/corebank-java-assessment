@@ -36,8 +36,8 @@ Sau khi hoàn thiện toàn bộ 10 nhóm yêu cầu chức năng của **Level 
 - Container `app` cũng được gắn `healthcheck` gọi `curl -fsS http://localhost:8080/actuator/health` để hệ thống điều phối biết chính xác thời điểm ứng dụng sẵn sàng phục vụ lưu lượng.
 
 ### 2.3. Tối ưu `application-prod.yml`, `render.yaml` & `.github/workflows/cd.yml`
-- **`application-prod.yml`:** Giới hạn `maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}` (phù hợp hạn mức kết nối của Supabase PostgreSQL 17 Session Pooler và mức RAM 512MB trên Render), `connection-timeout: 5000`, và truyền `-c lock_timeout=3000` để bảo vệ luồng giao dịch.
-- **`render.yaml`:** Định nghĩa IaC Blueprint cho Render (region `singapore`, branch `prod`, `rootDir: backend`, `healthCheckPath: /actuator/health`) với các biến nhạy cảm (`DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`) đặt `sync: false` để không bao giờ lưu thông tin mật trong Git.
+- **`application-prod.yml`:** Giới hạn `maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:5}` (phù hợp hạn mức kết nối của Cloud PostgreSQL 17 Session Pooler và container giới hạn bộ nhớ), `connection-timeout: 5000`, và thiết lập `lock_timeout` qua `connection-init-sql` để bảo vệ luồng giao dịch.
+- **`render.yaml`:** Định nghĩa IaC Blueprint tham khảo cho môi trường Cloud PaaS (region `singapore`, branch `prod`, `rootDir: backend`, `healthCheckPath: /actuator/health`) với các biến nhạy cảm (`DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`) đặt `sync: false` để không bao giờ lưu thông tin mật trong Git. Bản demo trực tuyến chính thức được vận hành trên máy chủ VPS qua Docker Compose + HTTPS Reverse Proxy.
 - **`.github/workflows/cd.yml`:** Bổ sung job `container-smoke-test` tự động build `docker compose up -d --build` ngay trên CI runner, đợi container `healthy`, kiểm tra tiến trình chạy dưới quyền `appuser`, và xác nhận các endpoint `/actuator/health`, `/v3/api-docs`, `/swagger-ui/index.html`, `/api/v1/statistics/balance-tiers` trả kết quả đúng từ dữ liệu seed.
 
 ---
