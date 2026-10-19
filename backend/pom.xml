@@ -19,7 +19,7 @@
 		<spotless.version>2.44.2</spotless.version>
 		<checkstyle.plugin.version>3.6.0</checkstyle.plugin.version>
 		<checkstyle.version>10.21.2</checkstyle.version>
-		<jacoco.version>0.8.12</jacoco.version>
+		<jacoco.version>0.8.15</jacoco.version>
 		<springdoc.version>2.8.5</springdoc.version>
 		<jfreechart.version>1.5.5</jfreechart.version>
 		<poi.version>5.5.1</poi.version>
