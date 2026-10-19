@@ -10,7 +10,7 @@ Story `0-7` rà soát và gia cố toàn diện các trường biên (edge cases
 2. Bảo vệ toàn diện các trường bất biến trên API `PATCH /api/v1/transactions/{id}` (kể cả trường tùy ý qua `@JsonAnySetter`) với mã lỗi `400 IMMUTABLE_FIELD` chuẩn RFC 9457.
 3. Chuẩn hóa phân loại địa lý (`COALESCE(NULLIF(BTRIM(location), ''), 'UNKNOWN')`), loại trừ giao dịch đã đảo (`status = 'COMPLETED' AND type <> 'REVERSAL'`) khỏi báo cáo thống kê SQL và đồng bộ `saveAndFlush(original)` trước khi truy vấn `JdbcClient`.
 4. Bổ sung Partial Covering Index `idx_tx_source_completed_created_amount` và Functional Partial Index `idx_customer_location` trong migration `V8__optimize_daily_limit_index_and_comments.sql`.
-5. Khắc phục cấu hình Docker multi-stage build, `application-prod.yml` tương thích Supabase Supavisor và thứ tự thời gian trong `R__demo_seed.sql`.
+5. Khắc phục cấu hình Docker multi-stage build, `application-prod.yml` tương thích với cả PostgreSQL 17 trực tiếp trên VPS lẫn Cloud Connection Pooler (Supavisor/PgBouncer) và chuẩn hóa thứ tự thời gian trong `R__demo_seed.sql`.
 
 ## 2. Đã làm gì
 
