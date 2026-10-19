@@ -56,6 +56,7 @@ public class ChartRenderer {
 
     static {
         System.setProperty("java.awt.headless", "true");
+        ChartFactory.setChartTheme(StandardChartTheme.createLegacyTheme());
     }
 
     /**
@@ -157,7 +158,6 @@ public class ChartRenderer {
         TimeSeriesCollection dataset = new TimeSeriesCollection();
         dataset.addSeries(series);
 
-        ChartFactory.setChartTheme(StandardChartTheme.createLegacyTheme());
         JFreeChart chart =
                 ChartFactory.createTimeSeriesChart(
                         chartTitle, "Date", yAxisLabel, dataset, true, false, false);

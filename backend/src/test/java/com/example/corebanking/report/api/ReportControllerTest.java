@@ -1,8 +1,14 @@
 package com.example.corebanking.report.api;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,13 +19,18 @@ import com.example.corebanking.common.config.ClockConfig;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
+import com.example.corebanking.report.api.dto.ReportExportCriteria;
 import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
 import com.example.corebanking.report.api.dto.TrendPointResponse;
+import com.example.corebanking.report.application.ReportExportService;
 import com.example.corebanking.report.application.ReportService;
+import com.example.corebanking.report.domain.ExportFormat;
 import com.example.corebanking.report.domain.ReportPeriod;
 import com.example.corebanking.report.domain.TrendGranularity;
 import com.example.corebanking.transaction.domain.TransactionType;
+import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -28,9 +39,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 @WebMvcTest(ReportController.class)
 @Import({
@@ -45,6 +58,8 @@ class ReportControllerTest {
     @Autowired private MockMvc mockMvc;
 
     @MockBean private ReportService reportService;
+
+    @MockBean private ReportExportService reportExportService;
 
     @Test
     @DisplayName(
@@ -280,5 +295,104 @@ class ReportControllerTest {
                 .andExpect(jsonPath("$.errors[0].field").value("granularity"));
 
         verifyNoInteractions(reportService);
+    }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/reports/export returns 200 with XLSX attachment headers and streamed body"
+                    + " for ADMIN (AC 1, L3-07, FR-21)")
+    void exportReport_whenValidXlsxParams_shouldReturn200WithAttachmentHeadersAndStreamedBody()
+            throws Exception {
+        LocalDate from = LocalDate.of(2026, 1, 1);
+        LocalDate to = LocalDate.of(2026, 6, 30);
+        ReportExportCriteria criteria =
+                new ReportExportCriteria(
+                        ExportFormat.XLSX,
+                        ReportPeriod.QUARTER,
+                        from,
+                        to,
+                        TransactionType.TRANSFER);
+
+        when(reportExportService.validateAndBuildCriteria(
+                        ExportFormat.XLSX,
+                        ReportPeriod.QUARTER,
+                        from,
+                        to,
+                        TransactionType.TRANSFER))
+                .thenReturn(criteria);
+
+        byte[] dummyXlsx = "PK-dummy-xlsx".getBytes(StandardCharsets.UTF_8);
+        doAnswer(
+                        invocation -> {
+                            OutputStream out = invocation.getArgument(1);
+                            out.write(dummyXlsx);
+                            return null;
+                        })
+                .when(reportExportService)
+                .export(eq(criteria), any(OutputStream.class));
+
+        MvcResult mvcResult =
+                mockMvc.perform(
+                                get("/api/v1/reports/export")
+                                        .param("format", "XLSX")
+                                        .param("period", "QUARTER")
+                                        .param("from", "2026-01-01")
+                                        .param("to", "2026-06-30")
+                                        .param("type", "TRANSFER"))
+                        .andExpect(status().isOk())
+                        .andExpect(
+                                header().string(
+                                                HttpHeaders.CONTENT_DISPOSITION,
+                                                "attachment;"
+                                                    + " filename=\"core-banking-report-quarter-2026-01-01-2026-06-30.xlsx\""))
+                        .andExpect(
+                                header().string(
+                                                HttpHeaders.CONTENT_TYPE,
+                                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                        .andReturn();
+
+        byte[] body =
+                mvcResult.getRequest().isAsyncStarted()
+                        ? mockMvc.perform(asyncDispatch(mvcResult))
+                                .andExpect(status().isOk())
+                                .andReturn()
+                                .getResponse()
+                                .getContentAsByteArray()
+                        : mvcResult.getResponse().getContentAsByteArray();
+        assertThat(body).isEqualTo(dummyXlsx);
+    }
+
+    @Test
+    @DisplayName(
+            "GET /api/v1/reports/export returns 400 VALIDATION_FAILED before streaming when format"
+                    + " is invalid or range exceeds 366 days (AC 3, NC-08)")
+    void exportReport_whenInvalidParams_shouldReturn400BeforeStreaming() throws Exception {
+        mockMvc.perform(
+                        get("/api/v1/reports/export")
+                                .param("format", "CSV")
+                                .param("period", "QUARTER")
+                                .param("from", "2026-01-01")
+                                .param("to", "2026-06-30"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].field").value("format"));
+
+        LocalDate from = LocalDate.of(2024, 1, 1);
+        LocalDate to = LocalDate.of(2026, 6, 30);
+        when(reportExportService.validateAndBuildCriteria(
+                        ExportFormat.XLSX, ReportPeriod.QUARTER, from, to, null))
+                .thenThrow(
+                        new BusinessRuleException(
+                                ErrorCode.VALIDATION_FAILED,
+                                "Report date range cannot exceed 366 days"));
+
+        mockMvc.perform(
+                        get("/api/v1/reports/export")
+                                .param("format", "XLSX")
+                                .param("period", "QUARTER")
+                                .param("from", "2024-01-01")
+                                .param("to", "2026-06-30"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
     }
 }

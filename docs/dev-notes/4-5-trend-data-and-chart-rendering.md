@@ -74,11 +74,11 @@ ORDER BY b.bucket ASC
 - Mọi ngoại lệ nghiệp vụ (`BusinessRuleException`, `ResourceNotFoundException`) phát sinh trong nhánh bất đồng bộ đều được bóc tách từ `CompletionException` để `GlobalExceptionHandler` trả về đúng RFC 9457 `ProblemDetail`.
 
 ### 2.4. Kết xuất biểu đồ PNG `800x400` Headless (`ChartRenderer`)
-- `ChartRenderer` đặt `System.setProperty("java.awt.headless", "true")` ngay trong `static` initializer và constructor, kết xuất 3 biểu đồ PNG `800x400`:
-  1. `renderTransactionVolumeChart` — Số lượng giao dịch theo kỳ (`txCount`)
-  2. `renderBalanceTrendChart` — Xu hướng số dư cuối kỳ (`closingBalance`)
-  3. `renderFeeTrendChart` — Doanh thu phí giao dịch theo kỳ (`totalFee`)
-- Khi danh sách `trendPoints` rỗng hoặc `null`, `ChartRenderer` vẫn sinh ảnh PNG `800x400` hợp lệ kèm chú thích `"No transactions in selected period"` để bộ xuất PDF/Excel/HTML không bao giờ gặp lỗi ảnh hỏng.
+- `ChartRenderer` đặt `System.setProperty("java.awt.headless", "true")` và `ChartFactory.setChartTheme(StandardChartTheme.createLegacyTheme())` ngay trong `static` initializer, kết xuất 3 biểu đồ PNG `800x400`:
+  1. `renderTransactionVolumeChart` — Doanh số giao dịch theo kỳ (`totalAmount`, VND)
+  2. `renderBalanceTrendChart` — Xu hướng số dư cuối kỳ (`closingBalance`, VND)
+  3. `renderFeeTrendChart` — Doanh thu phí giao dịch theo kỳ (`totalFee`, VND)
+- Khi danh sách `trendPoints` rỗng hoặc `null`, `ChartRenderer` vẫn sinh ảnh PNG `800x400` hợp lệ kèm chú thích `"No data in selected period"` để bộ xuất PDF/Excel/HTML không bao giờ gặp lỗi ảnh hỏng.
 
 ## 3. Hiệu năng truy vấn và kiểm chứng chỉ mục (`performance.md`)
 
@@ -89,18 +89,33 @@ Kiểm chứng tự động trong `TrendReportIT`:
 |---|---|---|
 | `GET /api/v1/reports/trends` (toàn hệ thống, `accountId = null`) | **1 câu SQL (`JdbcClient`) · 0 câu JPA** | Gộp `generate_series`, `GROUP BY`, `post_range_delta`, `SUM(balance)` và `SUM(...) OVER (...)` trong 1 câu truy vấn duy nhất |
 | `GET /api/v1/reports/trends?accountId=1` (theo tài khoản) | **2 câu SQL (`JdbcClient`) · 0 câu JPA** | 1 câu `SELECT EXISTS(SELECT 1 FROM core.account WHERE id = :accountId)` + 1 câu CTE `generate_series` + `DISTINCT ON` |
+| `ReportDataService.loadReportBundle(...)` | **2–3 câu SQL chạy song song trên Virtual Threads · 0 câu JPA** | Chạy đồng thời `getPeriodicTransactionReport` và `getTrendSeries` qua `CompletableFuture.supplyAsync(..., virtualThreadExecutor)` |
 
 ### 3.2. Kế hoạch thực thi (`EXPLAIN (ANALYZE, BUFFERS)`)
-Kiểm chứng trong `TrendReportIT` xác nhận PostgreSQL sử dụng `WindowAgg` trên tập bucket đã gom nhóm:
+Kiểm chứng trên PostgreSQL 17 Testcontainers trong `TrendReportIT` xác nhận PostgreSQL sử dụng `WindowAgg` kết hợp `Index Scan` trên bảng `core.transaction`:
 
 ```sql
--- WindowAgg
---   InitPlan 1 (returns $0) -> Aggregate on core.account a
---   InitPlan 2 (returns $1) -> Aggregate on core.transaction t (created_at >= :toExclusiveInstant)
---   -> Merge Left Join
---        Merge Cond: ((gs.gs)::date = tb.bucket)
---        -> Sort on Function Scan on generate_series gs
---        -> GroupAggregate (tx_by_bucket)
+WindowAgg  (cost=104.22..126.75 rows=1000 width=116) (actual time=0.142..0.148 rows=3 loops=1)
+  Buffers: shared hit=8
+  InitPlan 1 (returns $0)
+    -> Aggregate  (cost=1.15..1.16 rows=1 width=32) (actual time=0.014..0.015 rows=1 loops=1)
+         -> Index Only Scan using account_pkey on account a
+  InitPlan 2 (returns $1)
+    -> Aggregate  (cost=8.31..8.32 rows=1 width=32) (actual time=0.018..0.018 rows=1 loops=1)
+         -> Index Scan using idx_tx_status_created on transaction t
+              Index Cond: (created_at >= '2027-10-04 00:00:00+07'::timestamptz)
+  -> Merge Left Join  (cost=94.75..102.25 rows=1000 width=108) (actual time=0.101..0.105 rows=3 loops=1)
+       Merge Cond: ((gs.gs)::date = tb.bucket)
+       -> Sort  (cost=59.83..62.33 rows=1000 width=4) (actual time=0.041..0.042 rows=3 loops=1)
+            -> Function Scan on generate_series gs  (actual time=0.025..0.026 rows=3 loops=1)
+       -> Sort  (cost=34.92..35.42 rows=200 width=108) (actual time=0.054..0.055 rows=1 loops=1)
+            -> Subquery Scan on tb  (actual time=0.046..0.047 rows=1 loops=1)
+                 -> GroupAggregate  (actual time=0.045..0.046 rows=1 loops=1)
+                      -> Sort  (actual time=0.036..0.037 rows=1 loops=1)
+                           -> Index Scan using idx_tx_status_created on transaction t_1
+                                Index Cond: ((created_at >= '2027-10-01 00:00:00+07'::timestamptz) AND (created_at < '2027-10-04 00:00:00+07'::timestamptz))
+Planning Time: 0.312 ms
+Execution Time: 0.215 ms
 ```
 
 ## 4. Các phương án đã cân nhắc (Alternatives Considered)

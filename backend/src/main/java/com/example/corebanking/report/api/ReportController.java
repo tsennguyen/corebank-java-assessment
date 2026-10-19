@@ -1,8 +1,11 @@
 package com.example.corebanking.report.api;
 
+import com.example.corebanking.report.api.dto.ReportExportCriteria;
 import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
 import com.example.corebanking.report.api.dto.TrendPointResponse;
+import com.example.corebanking.report.application.ReportExportService;
 import com.example.corebanking.report.application.ReportService;
+import com.example.corebanking.report.domain.ExportFormat;
 import com.example.corebanking.report.domain.ReportPeriod;
 import com.example.corebanking.report.domain.TrendGranularity;
 import com.example.corebanking.transaction.domain.TransactionType;
@@ -17,16 +20,19 @@ import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 /**
- * REST controller exposing periodic transaction analytics reports and time-series trends (L3-01,
- * L3-02, L3-08, G-05, FR-19, FR-20).
+ * REST controller exposing periodic transaction analytics reports, time-series trends, and
+ * streaming financial report exports (L3-01, L3-02, L3-07, L3-08, G-05, FR-19, FR-20, FR-21).
  */
 @RestController
 @RequestMapping("/api/v1/reports")
@@ -37,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReportController {
 
     private final ReportService reportService;
+    private final ReportExportService reportExportService;
 
     /**
      * Retrieves aggregated transaction metrics grouped by {@code WEEK}, {@code QUARTER}, or {@code
@@ -168,5 +175,87 @@ public class ReportController {
                     @RequestParam(value = "accountId", required = false)
                     Long accountId) {
         return ResponseEntity.ok(reportService.getTrendSeries(granularity, from, to, accountId));
+    }
+
+    /**
+     * Streams a financial report in Excel ({@code .xlsx}) or PDF ({@code .pdf}) format containing
+     * periodic summary metrics, embedded trend charts, and transaction details (L3-07, L3-08, G-05,
+     * FR-21, NFR-2, ADR-014).
+     *
+     * @param format export file format ({@code XLSX} or {@code PDF})
+     * @param period aggregation period ({@code WEEK}, {@code QUARTER}, {@code YEAR})
+     * @param from inclusive start date
+     * @param to inclusive end date
+     * @param type optional transaction type filter
+     * @return streaming attachment response
+     */
+    @GetMapping("/export")
+    @Operation(
+            summary = "Export financial report to Excel (.xlsx) or PDF (.pdf)",
+            description =
+                    "Streams a complete financial report with periodic summary metrics, three"
+                            + " embedded 800x400 trend charts (volume, balance, fee), and"
+                            + " transaction details using SXSSFWorkbook(100) + JDBC cursor"
+                            + " streaming (fetchSize=1000) to bound memory usage (L3-07, L3-08,"
+                            + " G-05, FR-21, NFR-2, ADR-014).")
+    @ApiResponses({
+        @ApiResponse(
+                responseCode = "200",
+                description = "Financial report streamed as file attachment"),
+        @ApiResponse(
+                responseCode = "400",
+                description =
+                        "Invalid format/period, missing dates, 'to' before 'from', or range >"
+                                + " 366 days",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class))),
+        @ApiResponse(
+                responseCode = "403",
+                description = "Access denied (requires ADMIN role)",
+                content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
+    })
+    public ResponseEntity<StreamingResponseBody> exportReport(
+            @Parameter(
+                            description = "Export file format (XLSX, PDF)",
+                            example = "XLSX",
+                            required = true)
+                    @RequestParam("format")
+                    ExportFormat format,
+            @Parameter(
+                            description = "Aggregation period unit (WEEK, QUARTER, YEAR)",
+                            example = "QUARTER",
+                            required = true)
+                    @RequestParam("period")
+                    ReportPeriod period,
+            @Parameter(
+                            description = "Inclusive start date (yyyy-MM-dd, Asia/Ho_Chi_Minh)",
+                            example = "2026-01-01",
+                            required = true)
+                    @RequestParam("from")
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                    LocalDate from,
+            @Parameter(
+                            description = "Inclusive end date (yyyy-MM-dd, Asia/Ho_Chi_Minh)",
+                            example = "2026-06-30",
+                            required = true)
+                    @RequestParam("to")
+                    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                    LocalDate to,
+            @Parameter(
+                            description =
+                                    "Optional transaction type filter (DEPOSIT, WITHDRAWAL,"
+                                            + " TRANSFER, PAYMENT)",
+                            example = "TRANSFER")
+                    @RequestParam(value = "type", required = false)
+                    TransactionType type) {
+        ReportExportCriteria criteria =
+                reportExportService.validateAndBuildCriteria(format, period, from, to, type);
+        StreamingResponseBody body =
+                outputStream -> reportExportService.export(criteria, outputStream);
+        return ResponseEntity.ok()
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + criteria.buildFilename() + "\"")
+                .contentType(MediaType.parseMediaType(criteria.format().contentType()))
+                .body(body);
     }
 }

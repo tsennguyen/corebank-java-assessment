@@ -3,6 +3,7 @@ package com.example.corebanking.report.application;
 import com.example.corebanking.common.domain.BusinessRuleException;
 import com.example.corebanking.common.domain.ErrorCode;
 import com.example.corebanking.common.domain.ResourceNotFoundException;
+import com.example.corebanking.report.api.dto.TransactionExportRow;
 import com.example.corebanking.report.api.dto.TransactionReportBucketResponse;
 import com.example.corebanking.report.api.dto.TrendPointResponse;
 import com.example.corebanking.report.domain.ReportPeriod;
@@ -15,13 +16,15 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Application service providing periodic transaction analytics, time-series trend reconstructions,
- * and date-range boundary validation (L3-01, L3-02, L3-08, G-05, FR-19, FR-20).
+ * streaming transaction detail exports, and date-range boundary validation (L3-01, L3-02, L3-07,
+ * L3-08, G-05, FR-19, FR-20, FR-21).
  */
 @Service
 @RequiredArgsConstructor
@@ -32,6 +35,57 @@ public class ReportService {
 
     private final ReportRepository reportRepository;
     private final Clock clock;
+
+    /**
+     * Streams completed business transactions within {@code [from, to]} inside a read-only database
+     * transaction so PostgreSQL opens a server-side cursor ({@code fetchSize = 1000}) instead of
+     * loading rows into heap memory (AC 2, L3-07, G-05, NFR-2, ADR-014).
+     *
+     * @param from inclusive start date
+     * @param to inclusive end date
+     * @param type optional transaction type filter
+     * @param rowConsumer callback invoked for each transaction row
+     */
+    @Transactional(readOnly = true)
+    public void streamTransactionsInPeriod(
+            LocalDate from,
+            LocalDate to,
+            TransactionType type,
+            Consumer<TransactionExportRow> rowConsumer) {
+        streamTransactionsInPeriod(from, to, type, null, rowConsumer);
+    }
+
+    /**
+     * Streams completed business transactions within {@code [from, to]} with an optional row cap
+     * inside a read-only database transaction (L3-07, G-05, FR-21).
+     *
+     * @param from inclusive start date
+     * @param to inclusive end date
+     * @param type optional transaction type filter
+     * @param maxRows optional maximum number of rows to stream
+     * @param rowConsumer callback invoked for each transaction row
+     */
+    @Transactional(readOnly = true)
+    public void streamTransactionsInPeriod(
+            LocalDate from,
+            LocalDate to,
+            TransactionType type,
+            Integer maxRows,
+            Consumer<TransactionExportRow> rowConsumer) {
+        validateDateRange(from, to);
+        if (type == TransactionType.REVERSAL) {
+            throw new BusinessRuleException(
+                    ErrorCode.VALIDATION_FAILED,
+                    "REVERSAL transactions are excluded from financial report exports and cannot be"
+                            + " used as a filter");
+        }
+        ZoneId businessZone = clock.getZone();
+        Instant fromInstant = from.atStartOfDay(businessZone).toInstant();
+        Instant toExclusiveInstant = to.plusDays(1).atStartOfDay(businessZone).toInstant();
+
+        reportRepository.streamTransactionsInPeriod(
+                fromInstant, toExclusiveInstant, type, maxRows, rowConsumer);
+    }
 
     /**
      * Computes aggregated transaction metrics per {@link ReportPeriod} bucket within the inclusive
