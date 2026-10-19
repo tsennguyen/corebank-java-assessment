@@ -286,4 +286,58 @@ class RecurringExecutorTest {
                 .executeScheduledTransaction(
                         any(), any(), any(), any(), any(), any(), any(), any());
     }
+
+    @Test
+    @DisplayName(
+            "executeNextDue increments banking.recurring.executed counter with SUCCESS and FAILURE"
+                    + " outcome tags (Story 4.8: L3-09, FR-24)")
+    void executeNextDue_withMeterRegistry_shouldIncrementRecurringExecutedCounterByOutcome() {
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry =
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        RecurringExecutor meteredExecutor =
+                new RecurringExecutor(
+                        recurringRepository, transactionService, properties, clock, meterRegistry);
+
+        LocalDate today = LocalDate.now(clock);
+        RecurringTransaction recurring =
+                RecurringTransaction.create(
+                        RecurringTransactionType.DEPOSIT,
+                        null,
+                        101L,
+                        new BigDecimal("500000.00"),
+                        RecurringFrequency.DAILY,
+                        today,
+                        null,
+                        "HQ",
+                        "Metric recurring deposit",
+                        "admin",
+                        clock);
+        ReflectionTestUtils.setField(recurring, "id", 77L);
+
+        when(recurringRepository.findNextDueForUpdateSkipLocked(FIXED_NOW))
+                .thenReturn(Optional.of(recurring));
+
+        assertThat(meteredExecutor.executeNextDue()).isTrue();
+        assertThat(
+                        meterRegistry
+                                .get(RecurringExecutor.RECURRING_EXECUTED_METRIC)
+                                .tag("outcome", "SUCCESS")
+                                .counter()
+                                .count())
+                .isEqualTo(1.0);
+
+        doThrow(new BusinessRuleException(ErrorCode.INSUFFICIENT_BALANCE, "Low funds"))
+                .when(transactionService)
+                .executeScheduledTransaction(
+                        any(), any(), any(), any(), any(), any(), any(), any());
+
+        assertThat(meteredExecutor.executeNextDue()).isTrue();
+        assertThat(
+                        meterRegistry
+                                .get(RecurringExecutor.RECURRING_EXECUTED_METRIC)
+                                .tag("outcome", "FAILURE")
+                                .counter()
+                                .count())
+                .isEqualTo(1.0);
+    }
 }

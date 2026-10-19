@@ -1436,5 +1436,69 @@ class TransactionServiceTest {
                     .extracting("errorCode")
                     .isEqualTo(ErrorCode.DUPLICATE_RESOURCE);
         }
+
+        @Test
+        @DisplayName(
+                "banking.transactions Timer records type and outcome (SUCCESS/FAILURE) tags when"
+                        + " MeterRegistry is configured (Story 4.8: L3-09, FR-24)")
+        void transactionsMetric_shouldRecordTimerWithTypeAndOutcomeTags() {
+            io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry =
+                    new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+            TransactionService meteredService =
+                    new TransactionService(
+                            accountRepository,
+                            transactionRepository,
+                            referenceGenerator,
+                            feePolicy,
+                            limitPolicy,
+                            clock,
+                            eventPublisher,
+                            null,
+                            meterRegistry);
+
+            Account account =
+                    createAccount(
+                            1L,
+                            new BigDecimal("1000000.00"),
+                            new BigDecimal("20000000.00"),
+                            new BigDecimal("50000000.00"));
+            when(accountRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(account));
+            when(referenceGenerator.generate()).thenReturn("TXN-METRIC-001");
+            when(transactionRepository.save(any(Transaction.class)))
+                    .thenAnswer(inv -> inv.getArgument(0));
+
+            meteredService.deposit(
+                    new DepositRequest(
+                            1L, new BigDecimal("500000.00"), "HCMC", "Metric test deposit"));
+
+            assertThat(
+                            meterRegistry
+                                    .get(TransactionService.TRANSACTIONS_METRIC)
+                                    .tag("type", "DEPOSIT")
+                                    .tag("outcome", "SUCCESS")
+                                    .timer()
+                                    .count())
+                    .isEqualTo(1L);
+
+            assertThatThrownBy(
+                            () ->
+                                    meteredService.transfer(
+                                            new TransferRequest(
+                                                    1L,
+                                                    1L,
+                                                    new BigDecimal("100000.00"),
+                                                    "HCMC",
+                                                    "Same account failure")))
+                    .isInstanceOf(BusinessRuleException.class);
+
+            assertThat(
+                            meterRegistry
+                                    .get(TransactionService.TRANSACTIONS_METRIC)
+                                    .tag("type", "TRANSFER")
+                                    .tag("outcome", "FAILURE")
+                                    .timer()
+                                    .count())
+                    .isEqualTo(1L);
+        }
     }
 }

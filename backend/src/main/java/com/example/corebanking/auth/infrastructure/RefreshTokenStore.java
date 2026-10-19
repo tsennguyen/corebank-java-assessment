@@ -14,6 +14,7 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,7 +26,8 @@ import org.springframework.stereotype.Component;
 /**
  * Stores and rotates 256-bit opaque refresh tokens using SHA-256 hashing, token family tracking,
  * and reuse detection ({@code 401 TOKEN_REUSED}) with dual Redis + in-memory fallback support
- * (NC-07, FR-15).
+ * (NC-07, FR-15). Uses {@link ReentrantLock} instead of {@code synchronized} to avoid Java 21
+ * Virtual Thread carrier pinning during Redis I/O (L3-10, NFR-4).
  */
 @Component
 public class RefreshTokenStore {
@@ -42,7 +44,7 @@ public class RefreshTokenStore {
     @Nullable private final StringRedisTemplate redisTemplate;
     private final boolean redisEnabled;
     private final SecureRandom secureRandom = new SecureRandom();
-    private final Object rotationLock = new Object();
+    private final ReentrantLock rotationLock = new ReentrantLock();
 
     private final Map<String, ActiveTokenEntry> activeTokens = new ConcurrentHashMap<>();
     private final Map<String, UsedTokenEntry> usedTokens = new ConcurrentHashMap<>();
@@ -125,7 +127,8 @@ public class RefreshTokenStore {
         String tokenHash = sha256Hex(rawToken.trim());
         Instant now = clock.instant();
 
-        synchronized (rotationLock) {
+        rotationLock.lock();
+        try {
             String reusedFamilyId = findUsedTokenFamily(tokenHash, now);
             if (reusedFamilyId != null) {
                 revokeFamily(reusedFamilyId);
@@ -149,6 +152,8 @@ public class RefreshTokenStore {
 
             markTokenUsed(tokenHash, activeEntry.familyId(), activeEntry.expiresAt(), now);
             return new ConsumedRefreshToken(activeEntry.userId(), activeEntry.familyId());
+        } finally {
+            rotationLock.unlock();
         }
     }
 
@@ -165,7 +170,8 @@ public class RefreshTokenStore {
         String tokenHash = sha256Hex(rawToken.trim());
         Instant now = clock.instant();
 
-        synchronized (rotationLock) {
+        rotationLock.lock();
+        try {
             ActiveTokenEntry activeEntry = removeActiveToken(tokenHash);
             if (activeEntry != null) {
                 revokeFamily(activeEntry.familyId());
@@ -175,6 +181,8 @@ public class RefreshTokenStore {
             if (usedFamilyId != null) {
                 revokeFamily(usedFamilyId);
             }
+        } finally {
+            rotationLock.unlock();
         }
     }
 
