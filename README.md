@@ -11,10 +11,17 @@
 Hệ thống ngân hàng lõi (**Core Banking REST API**) xây dựng theo kiến trúc **Modular Monolith** trên nền tảng **Java 21 Virtual Threads**, **Spring Boot 3.5.16**, **PostgreSQL 17** và **Redis 7**. Hệ thống đảm bảo tính toàn vẹn tiền tệ tuyệt đối (`ACID`), chống Deadlock bằng khóa bi quan thứ tự ID tăng dần, chống trừ tiền hai lần bằng `Idempotency-Key`, phân quyền JWT + xoay vòng Refresh Token, tự động hóa giao dịch định kỳ, phát hiện giao dịch bất thường thời gian thực và kết xuất báo cáo tài chính (`.xlsx` & `.pdf`) kèm biểu đồ xu hướng.
 
 ## Bản demo trực tuyến
-- Địa chỉ: https://root1.tailc1340f.ts.net:8443 (Swagger UI, API, dashboard)
-- Bản demo được bảo vệ bằng mã truy cập; mã và tài khoản thử nghiệm được gửi kèm email nộp bài.
-- Dữ liệu là dữ liệu giả lập, tự khôi phục về trạng thái ban đầu lúc 03:30 (GMT+7) mỗi ngày.
-- Kiểm tra trạng thái công khai: https://root1.tailc1340f.ts.net:8443/actuator/health
+- Giao diện vận hành: https://root1.tailc1340f.ts.net:10000/
+- Swagger UI: https://root1.tailc1340f.ts.net:10000/swagger-ui/index.html
+- Health check: https://root1.tailc1340f.ts.net:10000/actuator/health
+- Tài khoản thử nghiệm được gửi kèm email nộp bài. Dữ liệu là dữ liệu giả lập, tự khôi phục về trạng thái ban đầu lúc 03:30 (GMT+7) mỗi ngày.
+
+## Kiểm thử nhanh
+```bash
+scripts/api-test.sh     # gọi đủ 48/48 operation trong Swagger, kể cả case lỗi (401/403/404/409/422)
+scripts/load-test.sh    # tạo hàng loạt khách hàng + chuyển tiền đồng thời hai chiều, kiểm tra tiền không lệch
+```
+Chi tiết từng case, cách thử trên Swagger và trên giao diện web: [docs/testing-guide.md](docs/testing-guide.md).
 
 ---
 

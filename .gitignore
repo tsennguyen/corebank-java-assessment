@@ -76,3 +76,6 @@ Thumbs.db
 scratch/
 tmp/
 temp/
+
+# Files exported by scripts/api-test.sh
+api-test-output/
