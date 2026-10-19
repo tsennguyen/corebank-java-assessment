@@ -23,6 +23,7 @@
 		<springdoc.version>2.8.5</springdoc.version>
 		<jfreechart.version>1.5.5</jfreechart.version>
 		<poi.version>5.5.1</poi.version>
+		<openpdf.version>2.0.3</openpdf.version>
 	</properties>
 
 	<dependencies>
@@ -89,6 +90,11 @@
 			<groupId>org.apache.poi</groupId>
 			<artifactId>poi-ooxml</artifactId>
 			<version>${poi.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
+			<version>${openpdf.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.projectlombok</groupId>
