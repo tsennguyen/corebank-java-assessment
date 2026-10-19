@@ -22,9 +22,11 @@ function showBanner(msg, isError = false) {
   const el = document.getElementById('statusBanner');
   if (!el) return;
   el.style.display = 'block';
-  el.style.background = isError ? 'rgba(239, 68, 68, 0.18)' : 'rgba(16, 185, 129, 0.18)';
-  el.style.border = `1px solid ${isError ? '#ef4444' : '#10b981'}`;
-  el.style.color = isError ? '#fca5a5' : '#6ee7b7';
+  el.style.background = isError
+    ? 'color-mix(in srgb, var(--danger) 14%, var(--panel))'
+    : 'color-mix(in srgb, var(--success) 14%, var(--panel))';
+  el.style.border = `1px solid ${isError ? 'var(--danger)' : 'var(--success)'}`;
+  el.style.color = isError ? 'var(--danger)' : 'var(--success)';
   el.textContent = msg;
 }
 
@@ -151,6 +153,10 @@ async function quickLogin(username, password) {
     await loadDashboardData();
     await loadAccountTransactions();
     await loadAlerts();
+    const dataView = document.getElementById('dataView');
+    if (dataView && dataView.style.display === 'block' && typeof loadDataView === 'function') {
+      await loadDataView();
+    }
   } catch (err) {
     showBanner(`Lỗi kết nối máy chủ: ${err.message}`, true);
   }
@@ -180,9 +186,27 @@ async function loadDashboardData() {
       if (accEl) {
         accEl.textContent = accSummary ? `Tài khoản: ${accSummary}` : 'Tài khoản: (trống)';
       }
-      if (currentPrincipalRole === 'CUSTOMER' && accList.length > 0) {
-        document.getElementById('lookupAccId').value = accList[0].id;
-        document.getElementById('srcAccId').value = accList[0].id;
+      if (accList.length > 0) {
+        const optsHtml = accList
+          .map(
+            (a) =>
+              `<option value="${esc(a.id)}">[#${esc(a.id)}] ${esc(a.accountNumber)} — Số dư: ${fmtMoney(a.balance)} ₫ (${esc(a.status)})</option>`
+          )
+          .join('');
+        ['srcAccId', 'tgtAccId', 'lookupAccId'].forEach((selId, idx) => {
+          const sel = document.getElementById(selId);
+          if (sel) {
+            const prev = sel.value;
+            sel.innerHTML = optsHtml;
+            if (prev && accList.some((a) => String(a.id) === String(prev))) {
+              sel.value = prev;
+            } else if (idx === 1 && accList.length > 1) {
+              sel.value = String(accList[1].id);
+            } else {
+              sel.value = String(accList[0].id);
+            }
+          }
+        });
       }
     }
 
@@ -370,7 +394,7 @@ async function submitTransaction() {
     }
     showBanner(
       `Giao dịch thành công! Mã tham chiếu: ${body.referenceNo} · Phí: ${fmtMoney(body.fee)} VND ${
-        replayed ? '⚡ [IDEMPOTENT REPLAY - Không trừ tiền lần 2]' : ''
+        replayed ? '[IDEMPOTENT REPLAY - Không trừ tiền lần 2]' : ''
       }`
     );
     await loadDashboardData();
@@ -461,7 +485,7 @@ async function runHistoricalFraudScan() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: '2026-01-01',
-        to: '2026-10-19',
+        to: new Date().toISOString().slice(0, 10),
       }),
     });
     const body = await res.json().catch(() => ({}));
@@ -510,5 +534,107 @@ async function exportFile(format) {
   }
 }
 
+function switchView(view) {
+  const views = { console: 'consoleView', data: 'dataView', guide: 'guideView' };
+  const tabs = { console: 'tabBtnConsole', data: 'tabBtnData', guide: 'tabBtnGuide' };
+  Object.keys(views).forEach((key) => {
+    const el = document.getElementById(views[key]);
+    if (el) el.style.display = key === view ? 'block' : 'none';
+    const tab = document.getElementById(tabs[key]);
+    if (tab) tab.classList.toggle('active', key === view);
+  });
+  if (view === 'data' && typeof loadDataView === 'function') loadDataView();
+}
+
+function onTxTypeChange() {
+  const type = document.getElementById('txType')?.value || 'TRANSFER';
+  const srcField = document.getElementById('srcAccField');
+  const tgtField = document.getElementById('tgtAccField');
+  if (srcField) srcField.style.opacity = type === 'DEPOSIT' ? '0.45' : '1';
+  if (tgtField) tgtField.style.opacity = type === 'WITHDRAWAL' || type === 'PAYMENT' ? '0.45' : '1';
+  previewFee();
+}
+
+function showStepResult(stepId, text) {
+  const el = document.getElementById(stepId);
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = text;
+}
+
+function selectedAccountId() {
+  const sel = document.getElementById('lookupAccId');
+  return (sel && sel.value) || '1';
+}
+
+async function loadCursorPages() {
+  if (currentPrincipalRole !== 'ADMIN') await quickLogin('admin', 'Admin@123');
+  const accId = selectedAccountId();
+  const line = (t) =>
+    `  • GD #${t.id} (${t.referenceNo}) ${t.type} ${fmtMoney(t.amount)} VND [${new Date(t.createdAt).toLocaleString('vi-VN')}]`;
+  const p1Url = `/api/v1/accounts/${encodeURIComponent(accId)}/transactions/cursor?size=3`;
+  const p1Res = await apiFetch(p1Url);
+  const p1 = await p1Res.json().catch(() => ({}));
+  if (!p1Res.ok) {
+    showStepResult('step6Result', formatProblemDetail(p1Res.status, p1));
+    return;
+  }
+  let text =
+    `GET ${p1Url} → HTTP ${p1Res.status}\n` +
+    `Trang 1 (hasNext=${p1.hasNext}):\n` +
+    (p1.content || []).map(line).join('\n');
+  if (p1.nextCursor) {
+    const p2Url = `/api/v1/accounts/${encodeURIComponent(accId)}/transactions/cursor?size=3&cursor=${encodeURIComponent(p1.nextCursor)}`;
+    const p2Res = await apiFetch(p2Url);
+    const p2 = await p2Res.json().catch(() => ({}));
+    text +=
+      `\n\nGET ...&cursor=${p1.nextCursor} → HTTP ${p2Res.status}\n` +
+      `Trang 2 (hasNext=${p2.hasNext}):\n` +
+      (p2.content || []).map(line).join('\n');
+  }
+  showStepResult('step6Result', text);
+}
+
+async function loadAuditLogs() {
+  if (currentPrincipalRole !== 'ADMIN') await quickLogin('admin', 'Admin@123');
+  const url = '/api/v1/admin/audit-logs?size=8&sort=createdAt,desc';
+  const res = await apiFetch(url);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showStepResult('step6Result', formatProblemDetail(res.status, body));
+    return;
+  }
+  const logs = body.content || [];
+  showStepResult(
+    'step6Result',
+    `GET ${url} → HTTP ${res.status} (tổng ${body.totalElements} bản ghi; bảng core.audit_log có trigger trg_audit_log_append_only chặn UPDATE/DELETE)\n` +
+      logs
+        .map(
+          (l) =>
+            `  • #${l.id} ${new Date(l.createdAt).toLocaleString('vi-VN')} | ${l.actor} | ${l.action} | ${l.entityType}#${l.entityId} | requestId=${l.requestId}`
+        )
+        .join('\n')
+  );
+}
+
+if (
+  typeof window !== 'undefined' &&
+  (window.location.pathname.indexOf('/guide') === 0 ||
+    window.location.hash === '#guide' ||
+    new URLSearchParams(window.location.search).get('view') === 'guide')
+) {
+  switchView('guide');
+} else if (
+  typeof window !== 'undefined' &&
+  (window.location.hash === '#console' ||
+    new URLSearchParams(window.location.search).get('view') === 'console')
+) {
+  switchView('console');
+} else if (typeof window !== 'undefined' && window.location.hash === '#data') {
+  switchView('data');
+}
+
 regenIdemKey();
 checkSystemHealth();
+// Tự động đăng nhập tài khoản admin ngay khi mở trang để hiển thị sẵn đầy đủ số liệu demo
+quickLogin('admin', 'Admin@123');
