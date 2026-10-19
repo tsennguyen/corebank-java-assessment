@@ -7,12 +7,12 @@
 
 ## 2. Đã làm gì
 - **`README.md`**:
-  - Cập nhật đầy đủ các năng lực cốt lõi từ **Level 1**, **Level 2** đến **Level 3** (bao gồm cả xuất báo cáo Excel `.xlsx` và PDF `.pdf` nhúng font Unicode tiếng Việt `DejaVuSans`) và sơ đồ cấu trúc 9 module (`auth`, `customer`, `account`, `transaction`, `recurring`, `fraud`, `report`, `cache`, `common`).
+  - Cập nhật đầy đủ các năng lực cốt lõi từ **Level 1**, **Level 2** đến **Level 3** (bao gồm cả xuất báo cáo Excel `.xlsx` và PDF `.pdf` nhúng font Unicode tiếng Việt `DejaVuSans`) và sơ đồ cấu trúc 8 module (`auth`, `customer`, `account`, `transaction`, `recurring`, `fraud`, `report`, `cache`, `common`).
   - Bổ sung mục **Bản demo trực tuyến** (`https://root1.tailc1340f.ts.net:8443`), hướng dẫn chạy 1 lệnh với Docker Compose (`PostgreSQL 17 + Redis 7 + App`), hướng dẫn chạy Local không cần Docker (`createdb core_banking`, `app.redis.enabled=false`) và **Bảng Tài khoản Mẫu** (`admin`, `cust.an`, `cust.binh`).
   - Bổ sung **Danh mục REST API Endpoints** và **Ma trận Truy vết Yêu cầu Đề bài** (`G-01`..`G-06`, `L1-01`..`L1-10`, `L2-01`..`L2-08`, `L3-01`..`L3-10`) kèm bảng kết quả đo hiệu năng thực nghiệm (`121,007 ms` → `0,937 ms` trên 1M bản ghi).
   - Bổ sung mục **Hướng mở rộng (Future Enhancements)** trình bày lộ trình kỹ thuật cho quy mô lớn (Keyset Pagination, ShedLock, Tamper-Evident Audit Log, Redis `GETDEL`, Transactional Outbox + Kafka).
 - **`docs/architecture.md`**:
-  - Sơ đồ phụ thuộc một chiều giữa 9 module, biểu đồ tuần tự luồng giao dịch nguyên tử + sự kiện `AFTER_COMMIT` trên Virtual Threads, và sơ đồ triển khai.
+  - Sơ đồ phụ thuộc một chiều giữa 8 module, biểu đồ tuần tự luồng giao dịch nguyên tử + sự kiện `AFTER_COMMIT` trên Virtual Threads, và sơ đồ triển khai.
 - **`docs/erd.md`**:
   - Sơ đồ Mermaid `erDiagram` phản ánh chính xác 9 bảng trong schema `core` từ `V1` đến `V13`, kèm **Danh mục Chỉ mục (B-tree, Partial, Covering Indexes)** và **Danh mục Ràng buộc Toàn vẹn (`CHECK`, `UNIQUE`, `FOREIGN KEY`)**.
 - **`docs/adr.md`**:

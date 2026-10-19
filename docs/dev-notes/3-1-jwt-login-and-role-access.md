@@ -41,7 +41,7 @@ Mở đầu **Level 2 (Security, Search & Automation)**, hệ thống Core Banki
 
 | Phương án | Ưu điểm | Nhược điểm / Lý do chọn hoặc loại |
 |---|---|---|
-| **Dùng `spring-boot-starter-oauth2-resource-server` (`NimbusJwtEncoder` / `NimbusJwtDecoder`)** *(Đã chọn)* | Tích hợp nguyên bản với Spring Security 6, được bảo trì đồng bộ theo vòng đời Spring Boot 3.4, hỗ trợ sẵn `JwtValidator` và `@WithMockUser`. | Cần cấu hình `OctetSequenceKey` cho khóa đối xứng `HS256`. |
+| **Dùng `spring-boot-starter-oauth2-resource-server` (`NimbusJwtEncoder` / `NimbusJwtDecoder`)** *(Đã chọn)* | Tích hợp nguyên bản với Spring Security 6, được bảo trì đồng bộ theo vòng đời Spring Boot 3.x, hỗ trợ sẵn `JwtValidator` và `@WithMockUser`. | Cần cấu hình `OctetSequenceKey` cho khóa đối xứng `HS256`. |
 | **Dùng thư viện ngoài `io.jsonwebtoken:jjwt`** *(Loại)* | Cú pháp builder quen thuộc ở các dự án cũ. | Phải tự viết `OncePerRequestFilter` thủ công, thêm phụ thuộc ngoài không cần thiết. |
 | **Gộp bảng `app_user` vào bảng `customer`** *(Loại)* | Bớt 1 bảng DB. | Làm ô nhiễm thực thể nghiệp vụ `Customer` với thông tin đăng nhập và không biểu diễn sạch tài khoản `ADMIN` (vốn không phải khách hàng ngân hàng). |
 

@@ -10,7 +10,7 @@ Tài liệu này mô tả chi tiết kiến trúc **Modular Monolith (Package-by
 
 ## 1. Sơ đồ Phụ thuộc Module (Modular Monolith — 9 Domain Modules)
 
-Hệ thống được chia thành 9 module nghiệp vụ độc lập bên trong `com.example.corebanking`. Phụ thuộc giữa các module luôn **một chiều (acyclic)**; đối với các ràng buộc chéo (như kiểm tra lịch giao dịch định kỳ trước khi đóng tài khoản), module bên dưới định nghĩa **Port Interface** (`AccountClosureGuard`) để đảo chiều phụ thuộc (Dependency Inversion).
+Hệ thống được chia thành 8 module (7 module nghiệp vụ + `common`) độc lập bên trong `com.example.corebanking`. Phụ thuộc giữa các module luôn **một chiều (acyclic)**; đối với các ràng buộc chéo (như kiểm tra lịch giao dịch định kỳ trước khi đóng tài khoản), module bên dưới định nghĩa **Port Interface** (`AccountClosureGuard`) để đảo chiều phụ thuộc (Dependency Inversion).
 
 ```mermaid
 flowchart TD
@@ -28,7 +28,7 @@ flowchart TD
         REC["recurring (RecurringTransactionJob, SKIP LOCKED, RecurringExecutor)"]
         FRAUD["fraud (AnomalyRuleChain, AmountThresholdRule, VelocityRule ZSET, FraudScanRepository)"]
         REP["report (StatisticsRepository, ReportRepository, ChartRenderer, SXSSF/PDF ReportExporter)"]
-        CACHE["cache (RedisCacheManager, Caffeine Fallback, ResilientCacheErrorHandler, AFTER_COMMIT Eviction)"]
+        CACHE["cache trong common/config (RedisCacheManager, Caffeine Fallback, ResilientCacheErrorHandler, AFTER_COMMIT Eviction)"]
     end
 
     COMMON["common (Money, BusinessRuleException, GlobalExceptionHandler RFC 9457, AsyncConfig)"]

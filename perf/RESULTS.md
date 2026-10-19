@@ -4,6 +4,23 @@ Tài liệu này ghi nhận kết quả đo thực nghiệm trên **PostgreSQL 1
 
 ---
 
+## 0. Đo lại trên MacBook ngày 19/10/2026 (có script và kết quả thô để chạy lại)
+
+- **Máy:** MacBook Pro 2019 (Intel i7-9750H 6 nhân, 16 GB RAM), PostgreSQL 17.11 (Postgres.app), không Docker.
+- **Dữ liệu:** seed demo + [`seed-large.sql`](seed-large.sql) = **1.000.024 giao dịch**, 10.000 tài khoản, đã `VACUUM ANALYZE`.
+- **Script:** [`explain-benchmark.sql`](explain-benchmark.sql). Kết quả thô: [`explain-macbook-2026-10-19.txt`](explain-macbook-2026-10-19.txt). Lấy lần chạy thứ hai (cache ấm). Cột "không index" ép quét tuần tự bằng `enable_*scan = off`, không xoá index.
+
+| Truy vấn | Không index | Có index | Index được dùng |
+|---|---|---|---|
+| Lịch sử 1 tài khoản, 30 ngày, `LIMIT 20` | 98,2 ms (`Parallel Seq Scan`, ~24.500 trang) | **0,084 ms** (16 trang) | `BitmapOr` trên `idx_tx_src_keyset` + `idx_tx_tgt_keyset` (V14) |
+| Tổng tiền ra trong ngày (`sumOutgoingAmountSince`) | 95,7 ms (`Parallel Seq Scan`, ~24.400 trang) | **0,041 ms** (3 trang) | `Index Only Scan` trên `idx_tx_source_completed_created_amount` (V8) |
+| Trang ở dòng thứ 500.000 của sổ cái | `OFFSET 500000`: 89,8 ms (đọc qua 500.020 dòng index) | **keyset `(created_at, id) <` con trỏ: 0,039 ms** (đọc 20 dòng) | `Index Only Scan` trên `idx_tx_created_id_keyset` (V14) |
+| Trang ở dòng thứ 100.000 | `OFFSET 100000`: 17,8 ms | keyset: ~0,04 ms | như trên |
+
+Nhận xét: với `OFFSET`, thời gian tăng tuyến tính theo độ sâu trang (100.000 dòng ≈ 18 ms, 500.000 dòng ≈ 90 ms); với keyset, thời gian gần như không đổi. Các số ở mục 1–3 bên dưới đo trước đó trên VPS 6 vCPU, cùng thứ tự độ lớn.
+
+---
+
 ## 1. Môi trường Đo kiểm
 
 | Thành phần | Cấu hình |
