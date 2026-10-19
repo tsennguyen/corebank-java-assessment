@@ -144,8 +144,23 @@ class DeploymentConfigTest {
                         resolveBackendFile("src/main/resources/static/app.js"),
                         StandardCharsets.UTF_8);
 
+        String frontendCrud =
+                Files.readString(resolveRepoRootFile("frontend/crud.js"), StandardCharsets.UTF_8);
+        String staticCrud =
+                Files.readString(
+                        resolveBackendFile("src/main/resources/static/crud.js"),
+                        StandardCharsets.UTF_8);
+
         assertThat(staticHtml).isEqualTo(frontendHtml);
         assertThat(staticJs).isEqualTo(frontendJs);
+        assertThat(staticCrud).isEqualTo(frontendCrud);
+        assertThat(frontendHtml).contains("<script src=\"crud.js\"></script>");
+        assertThat(frontendCrud)
+                .contains("/api/v1/customers")
+                .contains("/api/v1/accounts")
+                .contains("/api/v1/transactions/")
+                .contains("/api/v1/recurring-transactions")
+                .contains("/api/v1/customer-types");
         assertThat(frontendHtml)
                 .contains("Core Banking System — Operations Console")
                 .contains("quickLogin('admin'")
@@ -168,6 +183,7 @@ class DeploymentConfigTest {
                 .contains("/api/v1/reports/export")
                 .contains("/api/v1/alerts")
                 .contains("/api/v1/fraud/scans")
+                .contains("/api/v1/admin/audit-logs")
                 .contains("Idempotent-Replayed");
     }
 

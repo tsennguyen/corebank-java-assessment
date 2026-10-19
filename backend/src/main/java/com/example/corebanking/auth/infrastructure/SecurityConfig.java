@@ -120,6 +120,7 @@ public class SecurityConfig {
                                                 "/",
                                                 "/index.html",
                                                 "/app.js",
+                                                "/crud.js",
                                                 "/favicon.ico",
                                                 "/actuator/health",
                                                 "/actuator/health/**",

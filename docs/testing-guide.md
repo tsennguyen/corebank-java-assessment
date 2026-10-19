@@ -120,5 +120,19 @@ Lỗi luôn trả theo chuẩn RFC 9457 (`application/problem+json`) có `code` 
 | 5 | Khối cảnh báo: **Tải cảnh báo** rồi **Quét lịch sử** | Thấy 2 cảnh báo mẫu (`AMOUNT_THRESHOLD` HIGH, `VELOCITY` MEDIUM); quét lại không tạo trùng |
 | 6 | Khối báo cáo: **Xuất Excel**, **Xuất PDF** | Tải về file `.xlsx` 3 sheet và `.pdf` có biểu đồ, tiếng Việt đúng dấu |
 | 7 | Đăng nhập **cust.an** | Chỉ thấy tài khoản của mình; giao dịch từ tài khoản người khác bị 403 |
+| 8 | Khối 7: **Truy vấn Keyset Cursor**, **Tải Nhật ký Kiểm toán** | Hai trang lịch sử theo con trỏ; các thao tác vừa làm xuất hiện trong audit log |
 
-Những thao tác chưa có nút trên giao diện (tạo/sửa/xoá khách hàng, mở và khoá tài khoản, giao dịch định kỳ, đảo giao dịch) thử trên Swagger hoặc chạy `scripts/api-test.sh`.
+Tab **Quản lý Dữ liệu (CRUD)** (ADMIN). Mỗi thao tác hiện request và response thật ở khung nhật ký cuối trang:
+
+| # | Thao tác | Kết quả mong đợi |
+|---|---|---|
+| 9 | Khối 8: nhập họ tên, CCCD `000` + 9 số, bấm **Lưu khách hàng** | `POST /customers → 201`, CCCD hiển thị đã che |
+| 10 | Tạo lại với cùng CCCD | `409 DUPLICATE_RESOURCE` |
+| 11 | Bấm **Sửa** một khách hàng, đổi tên, lưu | `PUT → 200`, version tăng 1 |
+| 12 | Khối 9: **Mở tài khoản** cho khách hàng vừa tạo | Số tài khoản 12 chữ số |
+| 13 | **Khoá** tài khoản rồi nạp tiền vào nó ở tab chính | `422 ACCOUNT_NOT_ACTIVE`; **Mở khoá**, **Lịch sử** thấy đủ các lần chuyển trạng thái |
+| 14 | **Đóng** tài khoản còn tiền | `409 ACCOUNT_HAS_BALANCE`; tài khoản số dư 0 thì đóng được |
+| 15 | Khối 10: nhập ID giao dịch, **Xem**, **Lưu mô tả**, **Đảo giao dịch** 2 lần | Lần 1 tạo bút toán `REVERSAL`, lần 2 `409 ALREADY_REVERSED` |
+| 16 | Khối 11: **Sửa hạn mức** loại `INDIVIDUAL` | Hạn mức hiệu lực = min(hạn mức tài khoản, hạn mức loại khách hàng) |
+| 17 | Khối 12: **Tạo lịch định kỳ**, **Tạm dừng**, **Chạy lại**, **Huỷ** | Trạng thái `ACTIVE → PAUSED → ACTIVE → CANCELLED` |
+| 18 | Xoá khách hàng còn tài khoản | `409`; xoá khách hàng không còn tài khoản thì thành công (xoá mềm) |
