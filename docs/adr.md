@@ -1,4 +1,4 @@
-# Hồ sơ Quyết định Kiến trúc (Architecture Decision Records — ADR-001 → ADR-015)
+# Hồ sơ Quyết định Kiến trúc (Architecture Decision Records — ADR-001 → ADR-018)
 
 Tài liệu này tổng hợp các quyết định thiết kế kiến trúc cốt lõi (Architecture Decision Records — ADR) được áp dụng xuyên suốt hệ thống **Core Banking System**.
 
@@ -69,3 +69,18 @@ Tài liệu này tổng hợp các quyết định thiết kế kiến trúc c�
 ## ADR-015: Java 21 Virtual Threads, Loại bỏ `synchronized` Chống Carrier Pinning & Giới hạn HikariCP Pool
 - **Bối cảnh:** Khi bật Java 21 Virtual Threads (`spring.threads.virtual.enabled=true`), các khối `synchronized` bao quanh thao tác I/O sẽ ghim (pin) Virtual Thread vào OS carrier thread; đồng thời việc mở hàng trăm kết nối DB vật lý sẽ gây nghẽn PostgreSQL.
 - **Quyết định:** Thay thế toàn bộ khóa nội bộ quanh I/O bằng `ReentrantLock` (`try/finally`), kiểm tra tự động bằng unit test quét mã nguồn đảm bảo 0 khối `synchronized` trong `src/main/java`, và giữ kích thước `HikariCP maximum-pool-size` nhỏ gọn (`10` ở `local`, `5` ở `prod`).
+
+## ADR-016: Phân trang Con trỏ Keyset Pagination $O(\log N)$ cho Lịch sử Giao dịch (`CursorPageResponse`)
+- **Bối cảnh:** Trên bảng giao dịch triệu dòng (`1.000.000+` bản ghi), phân trang `OFFSET/LIMIT` chậm dần tuyến tính $O(N)$ ở các trang sâu và bị trượt dòng khi có giao dịch mới chèn vào đầu bảng.
+- **Quyết định:** Hỗ trợ song song tham số `?cursor=` (`GET /api/v1/accounts/{id}/transactions?cursor=...` và `/cursor`) mã hóa Base64URL cặp khóa thứ tự tuyệt đối `(createdAt, id)` kết hợp vị từ `(t.createdAt < :cursorCreatedAt) OR (t.createdAt = :cursorCreatedAt AND t.id < :cursorId)` trên chỉ mục `(created_at DESC, id DESC)` (`V14`) và kỹ thuật đọc `size + 1` dòng để xác định `hasNext` không cần `COUNT(*)`.
+
+## ADR-017: Bảo vệ Hai Lớp cho Tiến trình Định kỳ Đa Instance (`ShedLock` + `FOR UPDATE SKIP LOCKED`)
+- **Bối cảnh:** Khi triển khai nhiều replica Backend chạy song song, cần ngăn chặn các node cùng đánh thức bộ quét cron job một lúc gây lãng phí kết nối DB, đồng thời vẫn đảm bảo an toàn tuyệt đối nếu một node bị treo GC pause.
+- **Quyết định:** Kết hợp `SchedulerLockService` (câu lệnh nguyên tử `INSERT INTO core.shedlock ... ON CONFLICT (name) DO UPDATE ... WHERE lock_until <= :now` với `lockAtMostFor = PT5M`, `lockAtLeastFor = PT10S`) ở tầng điều phối cron job và `SELECT ... FOR UPDATE SKIP LOCKED` ở tầng dòng dữ liệu.
+
+## ADR-018: Nhật ký Kiểm toán Bất biến Cùng Giao dịch (`core.audit_log`) & Nguyên tử hóa Redis (`GETDEL` / Lua)
+- **Bối cảnh:** Các thao tác nhạy cảm (đổi trạng thái tài khoản, đổi hạn mức, đảo giao dịch `REVERSAL`, xử lý cảnh báo gian lận) bắt buộc phải có dấu vết kiểm toán không thể chối bỏ và không bao giờ lệch trạng thái với dữ liệu nghiệp vụ.
+- **Quyết định:**
+  - Ghi bảng `core.audit_log` đồng bộ ngay trong cùng giao dịch nghiệp vụ (`@EventListener` + `Propagation.MANDATORY`), che dấu PII (`MaskingUtils`) trước khi lưu `before_json`/`after_json` (`JSONB`), và khóa cứng bảng bằng trigger PostgreSQL `trg_audit_log_append_only` (`BEFORE UPDATE OR DELETE`).
+  - Nguyên tử hóa thao tác thu hồi Refresh Token trên Redis bằng `GETDEL` (`opsForValue().getAndDelete`) và bộ đếm đăng nhập sai bằng Lua script (`INCR` + `EXPIRE`), triệt tiêu hoàn toàn cửa sổ tranh chấp giữa hai lệnh mạng.
+

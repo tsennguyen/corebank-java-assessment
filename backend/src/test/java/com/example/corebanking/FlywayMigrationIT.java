@@ -493,4 +493,58 @@ class FlywayMigrationIT extends IntegrationTestBase {
             }
         }
     }
+
+    @Test
+    @DisplayName(
+            "Flyway applies V14 scale_and_hardening migration creating keyset indexes, shedlock,"
+                    + " and append-only audit_log")
+    void flywayMigration_shouldApplyV14ScaleAndHardeningSuccessfully() throws Exception {
+        try (Connection connection = dataSource.getConnection();
+                Statement statement = connection.createStatement()) {
+            try (ResultSet rs =
+                    statement.executeQuery(
+                            "SELECT version, description, type, script, success "
+                                    + "FROM core.flyway_schema_history "
+                                    + "WHERE version = '14'")) {
+                assertThat(rs.next())
+                        .as("Migration version 14 should be recorded in flyway_schema_history")
+                        .isTrue();
+                assertThat(rs.getString("script")).isEqualTo("V14__scale_and_hardening.sql");
+                assertThat(rs.getBoolean("success")).isTrue();
+            }
+
+            try (ResultSet rs =
+                    connection.getMetaData().getTables(null, "core", "shedlock", null)) {
+                assertThat(rs.next()).as("Table 'shedlock' should exist in schema 'core'").isTrue();
+            }
+
+            try (ResultSet rs =
+                    connection.getMetaData().getTables(null, "core", "audit_log", null)) {
+                assertThat(rs.next())
+                        .as("Table 'audit_log' should exist in schema 'core'")
+                        .isTrue();
+            }
+
+            for (String indexName :
+                    new String[] {
+                        "idx_tx_src_keyset",
+                        "idx_tx_tgt_keyset",
+                        "idx_tx_created_id_keyset",
+                        "idx_audit_log_created",
+                        "idx_audit_log_actor_created",
+                        "idx_audit_log_action_created"
+                    }) {
+                try (ResultSet rs =
+                        statement.executeQuery(
+                                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'core' AND"
+                                        + " indexname = '"
+                                        + indexName
+                                        + "'")) {
+                    assertThat(rs.next())
+                            .as("Index %s should exist in schema 'core'", indexName)
+                            .isTrue();
+                }
+            }
+        }
+    }
 }

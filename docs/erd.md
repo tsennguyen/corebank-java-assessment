@@ -1,6 +1,6 @@
 # Sơ đồ Thực thể Liên kết (Entity-Relationship Diagram — Schema `core`)
 
-Tài liệu này mô tả chính xác cấu trúc 9 bảng nghiệp vụ trong schema `core` trên **PostgreSQL 17** được quản lý bởi **Flyway** (`V1__init_schema.sql` → `V13__alert.sql`), kèm danh mục toàn bộ **Chỉ mục (B-tree, Partial, Covering Indexes)** và **Ràng buộc Toàn vẹn (`CHECK`, `UNIQUE`, `FOREIGN KEY`)**.
+Tài liệu này mô tả chính xác cấu trúc 11 bảng trong schema `core` trên **PostgreSQL 17** được quản lý bởi **Flyway** (`V1__init_schema.sql` → `V14__scale_and_hardening.sql`), kèm danh mục toàn bộ **Chỉ mục (B-tree, Partial, Covering, Keyset Indexes)** và **Ràng buộc Toàn vẹn (`CHECK`, `UNIQUE`, `FOREIGN KEY`, `TRIGGER`)**.
 
 ---
 
@@ -155,11 +155,31 @@ erDiagram
         timestamptz updated_at
         bigint version
     }
+
+    SHEDLOCK {
+        varchar(64) name PK "V14 cluster scheduler lock"
+        timestamptz lock_until "Lease expiration"
+        timestamptz locked_at "Acquisition timestamp"
+        varchar(255) locked_by "Instance identifier"
+    }
+
+    AUDIT_LOG {
+        bigserial id PK "V14 append-only audit log"
+        varchar(100) actor
+        varchar(64) action "ACCOUNT_STATUS_CHANGED | ACCOUNT_LIMITS_UPDATED | TRANSACTION_REVERSED | ALERT_STATUS_CHANGED"
+        varchar(64) entity_type "ACCOUNT | TRANSACTION | ALERT"
+        varchar(64) entity_id
+        jsonb before_json "PII-masked snapshot"
+        jsonb after_json "PII-masked snapshot"
+        varchar(64) request_id "X-Request-Id trace"
+        varchar(64) ip
+        timestamptz created_at
+    }
 ```
 
 ---
 
-## 2. Danh mục Chỉ mục Tối ưu hóa (Indexes — `V2` → `V13`)
+## 2. Danh mục Chỉ mục Tối ưu hóa (Indexes — `V2` → `V14`)
 
 | Bảng | Tên Chỉ mục | Loại Chỉ mục | Biểu thức Cột / Điều kiện `WHERE` | Migration | Mục đích Tối ưu Truy vấn |
 |---|---|---|---|---|---|
@@ -177,6 +197,7 @@ erDiagram
 | `core.transaction` | `idx_tx_status_created` | Composite B-tree | `(status, created_at DESC)` | `V9` | Tìm kiếm giao dịch nâng cao (`L2-04`) và stream báo cáo Excel/PDF theo kỳ (`L3-07`) |
 | `core.transaction` | `idx_tx_amount_created` | Composite B-tree | `(amount DESC, created_at DESC)` | `V9` | Lọc giao dịch theo khoảng tiền (`minAmount`, `maxAmount`) và quét `AMOUNT_THRESHOLD` |
 | `core.transaction` | `idx_tx_recurring_id` | Partial B-tree | `(recurring_id) WHERE recurring_id IS NOT NULL` | `V11` | Truy vết các giao dịch phát sinh từ lịch định kỳ |
+| `core.transaction` | `idx_tx_src_keyset` / `idx_tx_tgt_keyset` / `idx_tx_created_id_keyset` | **Keyset Composite B-tree** | `(source_account_id, created_at DESC, id DESC)` / `(target_account_id, created_at DESC, id DESC)` / `(created_at DESC, id DESC)` | `V14` | Phân trang con trỏ Keyset Pagination $O(\log N)$ trên lịch sử giao dịch triệu dòng (`Story 6.1`) |
 | `core.idempotency_key` | `idx_idempotency_expires_at` | B-tree | `(expires_at)` | `V6` | Dọn dẹp định kỳ các khóa `Idempotency-Key` hết hạn sau 24 giờ |
 | `core.app_user` | `idx_app_user_customer_id` | Partial B-tree | `(customer_id) WHERE customer_id IS NOT NULL` | `V7` | Liên kết 1-1 tài khoản đăng nhập `CUSTOMER` với hồ sơ `core.customer` |
 | `core.account_status_history` | `idx_acc_status_hist_account_changed` | Composite B-tree | `(account_id, changed_at DESC, id DESC)` | `V10` | Truy vấn lịch sử chuyển trạng thái của tài khoản (`L2-05`) |
@@ -188,12 +209,13 @@ erDiagram
 | `core.alert` | `idx_alert_account_created` | Composite B-tree | `(account_id, created_at DESC, id DESC)` | `V13` | Tra cứu cảnh báo theo tài khoản bị giám sát |
 | `core.alert` | `idx_alert_rule_created` | Composite B-tree | `(rule_code, created_at DESC, id DESC)` | `V13` | Lọc cảnh báo theo quy tắc (`AMOUNT_THRESHOLD`, `VELOCITY`) |
 | `core.alert` | `idx_alert_created` | Composite B-tree | `(created_at DESC, id DESC)` | `V13` | Phân trang danh sách cảnh báo toàn hệ thống |
+| `core.audit_log` | `idx_audit_entity` / `idx_audit_actor_created` / `idx_audit_created` | Composite B-tree | `(entity_type, entity_id, created_at DESC, id DESC)` / `(actor, created_at DESC, id DESC)` / `(created_at DESC, id DESC)` | `V14` | Tra cứu nhật ký kiểm toán bất biến theo thực thể, người thực hiện và khoảng thời gian (`GET /api/v1/admin/audit-logs`, `Story 6.3`) |
 
 *(Lưu ý: Migration `V5__drop_redundant_indexes.sql` đã chủ động xóa chỉ mục dư thừa `idx_account_number` vì cột `account_number` đã có ràng buộc `UNIQUE` tự tạo B-tree index).*
 
 ---
 
-## 3. Danh mục Ràng buộc Toàn vẹn (`CHECK`, `UNIQUE`, `FOREIGN KEY`)
+## 3. Danh mục Ràng buộc Toàn vẹn (`CHECK`, `UNIQUE`, `FOREIGN KEY`, `TRIGGER`)
 
 | Bảng | Tên Ràng buộc | Loại | Định nghĩa Chi tiết | Ý nghĩa Nghiệp vụ |
 |---|---|---|---|---|
@@ -215,3 +237,5 @@ erDiagram
 | `core.customer_type` | `customer_type_limits_check` | `CHECK` | `max_transaction_limit > 0 AND max_daily_limit >= max_transaction_limit` | Đảm bảo trần hạn mức phân loại khách hàng hợp lệ (`L3-06`) |
 | `core.alert` | `uk_alert_tx_rule` | `UNIQUE` | `UNIQUE (transaction_id, rule_code)` | Chống sinh trùng cảnh báo khi quét lại lịch sử (`ON CONFLICT DO NOTHING`) |
 | `core.alert` | `chk_alert_rule_code` / `status` | `CHECK` | `rule_code IN ('AMOUNT_THRESHOLD', 'VELOCITY')`, `status IN ('NEW', 'INVESTIGATING', 'RESOLVED', 'FALSE_POSITIVE')` | Chuẩn hóa vòng đời xử lý cảnh báo gian lận (`L3-04`) |
+| `core.audit_log` | `trg_audit_log_append_only` | `TRIGGER` | `BEFORE UPDATE OR DELETE ON core.audit_log FOR EACH ROW EXECUTE FUNCTION core.prevent_audit_log_mutation()` | Đảm bảo bảng nhật ký kiểm toán là bất biến (`Append-Only` — chặn mọi thao tác sửa/xóa dòng kiểm toán, `Story 6.3`) |
+

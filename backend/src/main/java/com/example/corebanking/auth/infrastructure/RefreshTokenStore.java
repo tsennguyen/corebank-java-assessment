@@ -242,8 +242,13 @@ public class RefreshTokenStore {
         if (redisEnabled) {
             try {
                 String redisKey = KEY_ACTIVE_PREFIX + tokenHash;
-                String payload = redisTemplate.opsForValue().get(redisKey);
-                redisTemplate.delete(redisKey);
+                String payload = redisTemplate.opsForValue().getAndDelete(redisKey);
+                if (payload == null) {
+                    payload = redisTemplate.opsForValue().get(redisKey);
+                    if (payload != null) {
+                        redisTemplate.delete(redisKey);
+                    }
+                }
                 if (payload != null) {
                     ActiveTokenEntry parsed = parseActiveEntry(payload);
                     if (parsed != null) {

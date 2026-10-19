@@ -3,7 +3,7 @@
 ## 1. Bối cảnh & Mục tiêu
 - **Story:** `5.5 — Large Seed Data and k6 Benchmark`
 - **Mã yêu cầu:** `NC-12`, `G-05` [ĐỀ+], `NFR-2`, `L1-07`, `L2-03`, `L2-08`
-- **PR:** `#45` (`perf/5-5-large-seed-data-and-k6-benchmark`)
+- **PR:** `#55` (`perf/5-5-large-seed-data-and-k6-benchmark`)
 - **Mục tiêu:** Chứng minh bằng số liệu thực nghiệm trên PostgreSQL 17 (`postgres:17-alpine`) và Redis 7 (`redis:7-alpine`) rằng kiến trúc chỉ mục (`V4`, `V8`, `V9`) và bộ nhớ đệm 2 tầng (`Story 3.7`) giúp hệ thống vận hành mượt mà ở cả quy mô nhỏ lẫn quy mô **1.000.000 dòng giao dịch**.
 
 ---

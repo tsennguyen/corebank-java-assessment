@@ -212,16 +212,33 @@ public class AuthService {
         RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
         if (attributes instanceof ServletRequestAttributes servletAttributes) {
             HttpServletRequest request = servletAttributes.getRequest();
-            String forwardedFor = request.getHeader("X-Forwarded-For");
-            if (forwardedFor != null && !forwardedFor.isBlank()) {
-                int commaIdx = forwardedFor.indexOf(',');
-                return (commaIdx > 0 ? forwardedFor.substring(0, commaIdx) : forwardedFor).trim();
-            }
             String remoteAddr = request.getRemoteAddr();
-            if (remoteAddr != null && !remoteAddr.isBlank()) {
-                return remoteAddr.trim();
+            String normalizedRemote = remoteAddr != null ? remoteAddr.trim() : "";
+            if (isTrustedProxy(normalizedRemote)) {
+                String forwardedFor = request.getHeader("X-Forwarded-For");
+                if (forwardedFor != null && !forwardedFor.isBlank()) {
+                    int commaIdx = forwardedFor.indexOf(',');
+                    return (commaIdx > 0 ? forwardedFor.substring(0, commaIdx) : forwardedFor)
+                            .trim();
+                }
+            }
+            if (!normalizedRemote.isEmpty()) {
+                return normalizedRemote;
             }
         }
         return "unknown";
+    }
+
+    static boolean isTrustedProxy(String ip) {
+        if (ip == null || ip.isEmpty()) {
+            return true;
+        }
+        return ip.startsWith("127.")
+                || "::1".equals(ip)
+                || "0:0:0:0:0:0:0:1".equals(ip)
+                || ip.startsWith("10.")
+                || ip.startsWith("192.168.")
+                || ip.matches("^172\\.(1[6-9]|2[0-9]|3[0-1])\\..*")
+                || ip.matches("^100\\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\\..*");
     }
 }

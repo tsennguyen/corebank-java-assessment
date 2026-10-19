@@ -10,6 +10,7 @@ public enum ErrorCode {
     VALIDATION_FAILED(400, "Validation failed"),
     IDEMPOTENCY_KEY_MISSING(400, "Idempotency key missing"),
     INVALID_SORT_FIELD(400, "Invalid sort field"),
+    INVALID_CURSOR(400, "Invalid pagination cursor"),
     SAME_ACCOUNT_TRANSFER(400, "Source and destination accounts cannot be identical"),
     IMMUTABLE_FIELD(400, "Field is immutable and cannot be updated"),
 

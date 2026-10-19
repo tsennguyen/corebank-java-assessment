@@ -210,7 +210,9 @@ ORDER BY t.created_at DESC, t.id DESC
                                 .query(String.class)
                                 .list();
                 String explainPlan = String.join("\n", explainLines);
-                assertThat(explainPlan).contains("Index Scan").contains("idx_tx_status_created");
+                assertThat(explainPlan)
+                        .contains("Index Scan")
+                        .containsAnyOf("idx_tx_status_created", "idx_tx_created_id_keyset");
             } finally {
                 jdbcClient.sql("RESET enable_seqscan").update();
             }

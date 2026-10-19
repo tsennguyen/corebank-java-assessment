@@ -96,5 +96,7 @@ class OpenApiConfigTest {
                 .containsKey(OpenApiConfig.SECURITY_SCHEME_NAME);
         assertThat(openAPI.getComponents().getSchemas())
                 .containsKeys("ProblemDetail", "ValidationError");
+        assertThat(OpenApiConfig.stripInternalCodes("Export financial report (L3-07, FR-21)."))
+                .isEqualTo("Export financial report.");
     }
 }

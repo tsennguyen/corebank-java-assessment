@@ -273,7 +273,7 @@ ON CONFLICT (transaction_id, rule_code) DO NOTHING
 
         alert.transitionStatus(request.targetStatus(), actor, request.note(), now);
         Alert saved = alertRepository.saveAndFlush(alert);
-
+        recordAlertAuditIfPresent(saved, previousStatus, actor, now);
         log.info(
                 "Updated fraud alert status [alertId={}, txnId={}, from={}, to={}, actor={}]",
                 saved.getId(),
@@ -490,5 +490,24 @@ ON CONFLICT (transaction_id, rule_code) DO NOTHING
             }
         }
         return DEFAULT_ACTOR;
+    }
+
+    @Autowired(required = false)
+    @Nullable
+    private com.example.corebanking.common.audit.AuditLogService auditLogService;
+
+    private void recordAlertAuditIfPresent(
+            Alert saved, AlertStatus previousStatus, String actor, Instant now) {
+        if (auditLogService != null) {
+            auditLogService.recordAlertStatusChange(
+                    saved.getId(),
+                    saved.getAccountId(),
+                    saved.getTransactionId(),
+                    previousStatus.name(),
+                    saved.getStatus().name(),
+                    saved.getResolutionNote(),
+                    actor,
+                    now);
+        }
     }
 }
