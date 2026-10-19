@@ -189,6 +189,14 @@ async function loadDashboardData() {
     if (tierRes.status === 403) {
       document.getElementById('tierTableBody').innerHTML =
         '<tr><td colspan="3" style="color: #fbbf24;">Vai trò CUSTOMER chỉ xem được tài khoản sở hữu cá nhân (403 ACCESS_DENIED trên API thống kê toàn hàng).</td></tr>';
+      document.getElementById('kpiAccounts').textContent = '—';
+      document.getElementById('kpiTotalBalance').textContent = '—';
+      document.getElementById('kpiTxCount').textContent = '—';
+      document.getElementById('locationSummary').textContent = '—';
+      const periodicBox = document.getElementById('periodicSummaryBox');
+      if (periodicBox) periodicBox.textContent = '—';
+      document.getElementById('trendTableBody').innerHTML =
+        '<tr><td colspan="4" class="muted">Chỉ hiển thị cho vai trò ADMIN.</td></tr>';
       return;
     }
 
@@ -227,7 +235,7 @@ async function loadDashboardData() {
       if (periodicBox && Array.isArray(buckets) && buckets.length > 0) {
         const latestBucket = buckets[buckets.length - 1];
         periodicBox.textContent =
-          `Kỳ ${latestBucket.periodStart} → ${latestBucket.periodEnd}: ` +
+          `Kỳ ${latestBucket.periodStart}: ` +
           `${latestBucket.txCount} GD · Tổng ${fmtMoney(latestBucket.totalAmount)} VND · ` +
           `TB ${fmtMoney(latestBucket.averageAmount)} VND · Max ${fmtMoney(latestBucket.maxAmount)} VND`;
       }

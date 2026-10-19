@@ -169,8 +169,8 @@ erDiagram
         varchar(64) action "ACCOUNT_STATUS_CHANGED | ACCOUNT_LIMITS_UPDATED | TRANSACTION_REVERSED | ALERT_STATUS_CHANGED"
         varchar(64) entity_type "ACCOUNT | TRANSACTION | ALERT"
         varchar(64) entity_id
-        jsonb before_json "PII-masked snapshot"
-        jsonb after_json "PII-masked snapshot"
+        text before_json "PII-masked snapshot"
+        text after_json "PII-masked snapshot"
         varchar(64) request_id "X-Request-Id trace"
         varchar(64) ip
         timestamptz created_at
@@ -209,7 +209,7 @@ erDiagram
 | `core.alert` | `idx_alert_account_created` | Composite B-tree | `(account_id, created_at DESC, id DESC)` | `V13` | Tra cứu cảnh báo theo tài khoản bị giám sát |
 | `core.alert` | `idx_alert_rule_created` | Composite B-tree | `(rule_code, created_at DESC, id DESC)` | `V13` | Lọc cảnh báo theo quy tắc (`AMOUNT_THRESHOLD`, `VELOCITY`) |
 | `core.alert` | `idx_alert_created` | Composite B-tree | `(created_at DESC, id DESC)` | `V13` | Phân trang danh sách cảnh báo toàn hệ thống |
-| `core.audit_log` | `idx_audit_entity` / `idx_audit_actor_created` / `idx_audit_created` | Composite B-tree | `(entity_type, entity_id, created_at DESC, id DESC)` / `(actor, created_at DESC, id DESC)` / `(created_at DESC, id DESC)` | `V14` | Tra cứu nhật ký kiểm toán bất biến theo thực thể, người thực hiện và khoảng thời gian (`GET /api/v1/admin/audit-logs`, `Story 6.3`) |
+| `core.audit_log` | `idx_audit_log_created` / `idx_audit_log_actor_created` / `idx_audit_log_action_created` | Composite B-tree | `(created_at DESC, id DESC)` / `(actor, created_at DESC, id DESC)` / `(action, created_at DESC, id DESC)` | `V14` | Tra cứu nhật ký kiểm toán bất biến theo thời gian, người thực hiện và hành động (`GET /api/v1/admin/audit-logs`, `Story 6.3`) |
 
 *(Lưu ý: Migration `V5__drop_redundant_indexes.sql` đã chủ động xóa chỉ mục dư thừa `idx_account_number` vì cột `account_number` đã có ràng buộc `UNIQUE` tự tạo B-tree index).*
 

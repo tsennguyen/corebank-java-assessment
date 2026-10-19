@@ -366,5 +366,16 @@ class StatisticsIntegrationTest extends IntegrationTestBase {
                 assertThat(current.location()).isLessThanOrEqualTo(next.location());
             }
         }
+
+        // 5. Verify initial anomaly alerts (AMOUNT_THRESHOLD and VELOCITY) are seeded in core.alert
+        Long seededAlerts =
+                jdbcClient
+                        .sql(
+                                "SELECT COUNT(*) FROM core.alert a JOIN core.transaction t ON"
+                                        + " t.id = a.transaction_id WHERE t.reference_no IN"
+                                        + " ('TXN-SEED-0017', 'TXN-SEED-0023')")
+                        .query(Long.class)
+                        .single();
+        assertThat(seededAlerts).isEqualTo(2L);
     }
 }
