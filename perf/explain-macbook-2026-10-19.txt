@@ -1,0 +1,152 @@
+# Raw output of perf/explain-benchmark.sql (second, warm run)
+# MacBook Pro 2019 (Intel i7-9750H 6 cores, 16 GB RAM), PostgreSQL 17.11 (Postgres.app), 2026-10-19
+# Dataset: demo seed + perf/seed-large.sql = 1,000,024 rows in core.transaction, after VACUUM ANALYZE
+
+Pager usage is off.
+ typ_rows 
+----------
+      200
+(1 row)
+
+=== Q1 account history (30 days, LIMIT 20) WITHOUT index
+SET
+SET
+SET
+                                                                 QUERY PLAN                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=94.296..98.145 rows=16 loops=1)
+   Buffers: shared hit=10834 read=13645
+   ->  Gather Merge (actual time=94.295..98.142 rows=16 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=10834 read=13645
+         ->  Sort (actual time=89.693..89.694 rows=5 loops=3)
+               Sort Key: created_at DESC, id DESC
+               Sort Method: quicksort  Memory: 25kB
+               Buffers: shared hit=10834 read=13645
+               Worker 0:  Sort Method: quicksort  Memory: 25kB
+               Worker 1:  Sort Method: quicksort  Memory: 25kB
+               ->  Parallel Seq Scan on transaction (actual time=1.995..89.589 rows=5 loops=3)
+                     Filter: (((source_account_id = 5000) OR (target_account_id = 5000)) AND (created_at >= (now() - '30 days'::interval)))
+                     Rows Removed by Filter: 333336
+                     Buffers: shared hit=10746 read=13645
+ Planning:
+   Buffers: shared hit=35
+ Planning Time: 0.245 ms
+ Execution Time: 98.176 ms
+(20 rows)
+
+RESET
+RESET
+RESET
+=== Q1 account history WITH indexes
+                                                                                           QUERY PLAN                                                                                           
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.051..0.056 rows=16 loops=1)
+   Buffers: shared hit=16
+   ->  Sort (actual time=0.051..0.053 rows=16 loops=1)
+         Sort Key: created_at DESC, id DESC
+         Sort Method: quicksort  Memory: 25kB
+         Buffers: shared hit=16
+         ->  Bitmap Heap Scan on transaction (actual time=0.027..0.040 rows=16 loops=1)
+               Recheck Cond: (((source_account_id = 5000) AND (created_at >= (now() - '30 days'::interval))) OR ((target_account_id = 5000) AND (created_at >= (now() - '30 days'::interval))))
+               Filter: (created_at >= (now() - '30 days'::interval))
+               Heap Blocks: exact=10
+               Buffers: shared hit=16
+               ->  BitmapOr (actual time=0.018..0.018 rows=0 loops=1)
+                     Buffers: shared hit=6
+                     ->  Bitmap Index Scan on idx_tx_src_keyset (actual time=0.012..0.012 rows=8 loops=1)
+                           Index Cond: ((source_account_id = 5000) AND (created_at >= (now() - '30 days'::interval)))
+                           Buffers: shared hit=3
+                     ->  Bitmap Index Scan on idx_tx_tgt_keyset (actual time=0.005..0.005 rows=8 loops=1)
+                           Index Cond: ((target_account_id = 5000) AND (created_at >= (now() - '30 days'::interval)))
+                           Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=1
+ Planning Time: 0.179 ms
+ Execution Time: 0.084 ms
+(23 rows)
+
+=== Q2 daily outgoing sum (sumOutgoingAmountSince) WITHOUT index
+SET
+SET
+SET
+                                                                                                   QUERY PLAN                                                                                                    
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate (actual time=91.831..95.657 rows=1 loops=1)
+   Buffers: shared hit=10769 read=13628 written=6
+   ->  Gather (actual time=91.820..95.645 rows=0 loops=1)
+         Workers Planned: 2
+         Workers Launched: 2
+         Buffers: shared hit=10769 read=13628 written=6
+         ->  Parallel Seq Scan on transaction (actual time=86.879..86.879 rows=0 loops=3)
+               Filter: ((source_account_id = 11) AND ((status)::text = 'COMPLETED'::text) AND ((type)::text = ANY ('{WITHDRAWAL,TRANSFER,PAYMENT}'::text[])) AND (created_at >= date_trunc('day'::text, now())))
+               Rows Removed by Filter: 333341
+               Buffers: shared hit=10769 read=13628 written=6
+ Planning:
+   Buffers: shared hit=77
+ Planning Time: 0.442 ms
+ Execution Time: 95.688 ms
+(14 rows)
+
+RESET
+RESET
+RESET
+=== Q2 daily outgoing sum WITH indexes
+                                                         QUERY PLAN                                                          
+-----------------------------------------------------------------------------------------------------------------------------
+ Aggregate (actual time=0.025..0.025 rows=1 loops=1)
+   Buffers: shared hit=3
+   ->  Index Only Scan using idx_tx_source_completed_created_amount on transaction (actual time=0.023..0.023 rows=0 loops=1)
+         Index Cond: ((source_account_id = 11) AND (created_at >= date_trunc('day'::text, now())))
+         Heap Fetches: 0
+         Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=6
+ Planning Time: 0.245 ms
+ Execution Time: 0.041 ms
+(10 rows)
+
+=== Q3 page at row 500,000 with OFFSET
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=89.829..89.834 rows=20 loops=1)
+   Buffers: shared hit=1920
+   ->  Index Only Scan using idx_tx_created_id_keyset on transaction (actual time=0.021..61.860 rows=500020 loops=1)
+         Heap Fetches: 36
+         Buffers: shared hit=1920
+ Planning:
+   Buffers: shared hit=1
+ Planning Time: 0.106 ms
+ Execution Time: 89.849 ms
+(9 rows)
+
+=== Q3 same page with keyset cursor (created_at, id)
+                                                   QUERY PLAN                                                   
+----------------------------------------------------------------------------------------------------------------
+ Limit (actual time=0.015..0.019 rows=20 loops=1)
+   Buffers: shared hit=4
+   ->  Index Only Scan using idx_tx_created_id_keyset on transaction (actual time=0.014..0.017 rows=20 loops=1)
+         Index Cond: (ROW(created_at, id) < ROW('2026-04-22 14:35:58+07'::timestamp with time zone, 500006))
+         Heap Fetches: 0
+         Buffers: shared hit=4
+ Planning:
+   Buffers: shared hit=10
+ Planning Time: 0.142 ms
+ Execution Time: 0.039 ms
+(10 rows)
+
+=== Q3b page at row 100,000 with OFFSET
+                                                     QUERY PLAN                                                      
+---------------------------------------------------------------------------------------------------------------------
+ Limit (actual time=17.806..17.810 rows=20 loops=1)
+   Buffers: shared hit=388
+   ->  Index Only Scan using idx_tx_created_id_keyset on transaction (actual time=0.009..12.236 rows=100020 loops=1)
+         Heap Fetches: 29
+         Buffers: shared hit=388
+ Planning:
+   Buffers: shared hit=1
+ Planning Time: 0.057 ms
+ Execution Time: 17.822 ms
+(9 rows)
+

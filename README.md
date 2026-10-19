@@ -6,7 +6,7 @@
 ![Java 21](https://img.shields.io/badge/Java-21_LTS_(Virtual_Threads)-orange)
 ![Spring Boot 3.5.16](https://img.shields.io/badge/Spring_Boot-3.5.16-brightgreen)
 ![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-blue)
-![Coverage Gate](https://img.shields.io/badge/Coverage-92.73%25_Line_%7C_≥80%25_Gate-green)
+![Coverage Gate](https://img.shields.io/badge/Coverage-92.9%25_Line_%7C_≥80%25_Gate-green)
 
 Hệ thống ngân hàng lõi (**Core Banking REST API**) xây dựng theo kiến trúc **Modular Monolith** trên nền tảng **Java 21 Virtual Threads**, **Spring Boot 3.5.16**, **PostgreSQL 17** và **Redis 7**. Hệ thống đảm bảo tính toàn vẹn tiền tệ tuyệt đối (`ACID`), chống Deadlock bằng khóa bi quan thứ tự ID tăng dần, chống trừ tiền hai lần bằng `Idempotency-Key`, phân quyền JWT + xoay vòng Refresh Token, tự động hóa giao dịch định kỳ, phát hiện giao dịch bất thường thời gian thực và kết xuất báo cáo tài chính (`.xlsx` & `.pdf`) kèm biểu đồ xu hướng.
 
@@ -42,7 +42,7 @@ Chi tiết từng case, cách thử trên Swagger và trên giao diện web: [do
 ### Level 3 & Scale Hardening — Báo cáo Chu kỳ, Phát hiện Gian lận, Xuất Excel/PDF, Observability & Nhật ký Kiểm toán
 - **Báo cáo Giao dịch Theo Kỳ & Chuỗi Xu hướng (`report/`):** Tổng hợp theo `WEEK`, `QUARTER`, `YEAR` bằng `date_trunc` và tính chuỗi số dư cuối kỳ bằng `generate_series` + hàm cửa sổ tích lũy ngược (`SUM(...) OVER (ROWS BETWEEN 1 FOLLOWING AND UNBOUNDED FOLLOWING)`).
 - **Phát hiện Giao dịch Bất thường & Quét Lịch sử (`fraud/`):** Đánh giá bất đồng bộ trên Java 21 Virtual Threads (`@Async` + `AFTER_COMMIT`) với quy tắc `AMOUNT_THRESHOLD` ($\ge 50\text{M VND}$) và `VELOCITY` ($> 5\text{ GD} / 60\text{s}$ qua Redis ZSET / `ArrayDeque` + `ReentrantLock`); hỗ trợ quét lịch sử bằng PostgreSQL Window Function `RANGE ... PRECEDING` và quản lý vòng đời cảnh báo (`NEW -> INVESTIGATING -> RESOLVED | FALSE_POSITIVE`).
-- **Vẽ Biểu đồ Headless & Xuất Báo cáo Luồng Excel / PDF (`report/export/`):** Kết xuất 3 biểu đồ PNG `800x400` bằng `JFreeChart` headless; stream trực tiếp file Excel `.xlsx` 3 sheets (`Tong hop`, `Chi tiet`, `Bieu do`) qua `SXSSFWorkbook(100)` + con trỏ JDBC (`fetchSize = 1000`); và kết xuất báo cáo `.pdf` (`format=PDF`) bằng `OpenPDF 2.0.2` nhúng font Unicode tiếng Việt (`DejaVuSans.ttf` / `DejaVuSans-Bold.ttf`), 3 biểu đồ xu hướng PNG cùng bảng chi tiết giới hạn an toàn 1.000 dòng.
+- **Vẽ Biểu đồ Headless & Xuất Báo cáo Luồng Excel / PDF (`report/export/`):** Kết xuất 3 biểu đồ PNG `800x400` bằng `JFreeChart` headless; stream trực tiếp file Excel `.xlsx` 3 sheets (`Tong hop`, `Chi tiet`, `Bieu do`) qua `SXSSFWorkbook(100)` + con trỏ JDBC (`fetchSize = 1000`); và kết xuất báo cáo `.pdf` (`format=PDF`) bằng `OpenPDF 2.0.3` nhúng font Unicode tiếng Việt (`DejaVuSans.ttf` / `DejaVuSans-Bold.ttf`), 3 biểu đồ xu hướng PNG cùng bảng chi tiết giới hạn an toàn 1.000 dòng.
 - **Nhật ký Kiểm toán Bất biến & Observability (`common/audit/`, `Actuator` / `Micrometer`):** Ghi bảng kiểm toán `core.audit_log` (khóa cứng bằng trigger `trg_audit_log_append_only`) đồng bộ cùng giao dịch (`Propagation.MANDATORY`) với dữ liệu PII đã làm mờ (`MaskingUtils`); phơi bày an toàn `/actuator/health` và `/actuator/metrics` (`ADMIN`-only) với các bộ đo `banking.transactions`, `banking.alerts.raised`, `banking.recurring.executed`.
 
 ---
@@ -51,7 +51,7 @@ Chi tiết từng case, cách thử trên Swagger và trên giao diện web: [do
 
 - **Ngôn ngữ & Nền tảng:** Java 21 LTS (Virtual Threads), Spring Boot 3.5.16 (Web, Data JPA, JDBC Client, Security, OAuth2 Resource Server, Validation, Cache, Actuator)
 - **Cơ sở dữ liệu & Cache:** PostgreSQL 17, Flyway Migration (`V1`–`V14` + repeatable seed `R__demo_seed.sql`), Redis 7 + Caffeine
-- **Báo cáo & Biểu đồ:** JFreeChart 1.5.5 (Headless PNG), Apache POI 5.5.1 (`SXSSFWorkbook` streaming), OpenPDF 2.0.2 (`DejaVuSans` Unicode PDF)
+- **Báo cáo & Biểu đồ:** JFreeChart 1.5.5 (Headless PNG), Apache POI 5.5.1 (`SXSSFWorkbook` streaming), OpenPDF 2.0.3 (`DejaVuSans` Unicode PDF)
 - **Kiểm thử & Chất lượng:** **520 bài kiểm thử tự động** (JUnit 5, Mockito, Testcontainers PostgreSQL 17 & Redis 7), JaCoCo (**92.74% line coverage** / **74.20% branch coverage**, vượt cổng CI $\ge 80\%$), Spotless, Checkstyle, GitHub Actions (CI, CD Smoke Test, CodeQL SAST, Dependency Review)
 
 ```text
@@ -145,7 +145,7 @@ curl -s -L "http://localhost:8080/api/v1/reports/export?format=PDF&period=QUARTE
 | | `GET /api/v1/me/accounts` | `CUSTOMER` / `ADMIN` | Liệt kê danh sách tài khoản thuộc sở hữu của người dùng đang đăng nhập |
 | **Customers & Types** | `POST /api/v1/customers` | `ADMIN` | Tạo mới khách hàng (`INDIVIDUAL` / `BUSINESS`), sinh mã `CUS...` |
 | | `GET /api/v1/customers/{id}` | `ADMIN` / Owner | Xem chi tiết khách hàng theo ID |
-| | `GET /api/v1/customers` | `ADMIN` | Tìm kiếm & phân trang khách hàng (`keyword`, `location`) |
+| | `GET /api/v1/customers` | `ADMIN` | Tìm kiếm & phân trang khách hàng (`name`, `location`, `customerTypeCode`) |
 | | `PUT /api/v1/customers/{id}` | `ADMIN` | Cập nhật thông tin khách hàng (kiểm tra khóa lạc quan `version`) |
 | | `DELETE /api/v1/customers/{id}` | `ADMIN` | Xóa mềm khách hàng (`deleted_at`), chặn nếu còn tài khoản `ACTIVE`/`LOCKED` |
 | | `GET /api/v1/customer-types` | Authenticated | Danh sách phân loại khách hàng và trần hạn mức (`INDIVIDUAL`, `BUSINESS`) |
@@ -153,7 +153,7 @@ curl -s -L "http://localhost:8080/api/v1/reports/export?format=PDF&period=QUARTE
 | | `PUT /api/v1/customer-types/{code}` | `ADMIN` | Cập nhật trần hạn mức tối đa (`maxTransactionLimit`, `maxDailyLimit`) |
 | **Accounts** | `POST /api/v1/accounts` | `ADMIN` | Mở tài khoản mới (sinh số tài khoản 12 chữ số kiểm tra Luhn) |
 | | `GET /api/v1/accounts/{id}` | `ADMIN` / Owner | Xem chi tiết tài khoản & số dư hiện tại |
-| | `GET /api/v1/accounts` | `ADMIN` | Tìm kiếm & lọc tài khoản (`customerId`, `status`, `tier`, `minBalance`, `maxBalance`) |
+| | `GET /api/v1/accounts` | `ADMIN` | Tìm kiếm & lọc tài khoản (`customerId`, `status`, `accountNumber`) |
 | | `PATCH /api/v1/accounts/{id}` | `ADMIN` | Cập nhật hạn mức giao dịch (`transactionLimit`, `dailyLimit`), chặn sửa trường bất biến |
 | | `POST /api/v1/accounts/{id}/status` | `ADMIN` | Chuyển trạng thái `ACTIVE ⇄ LOCKED → CLOSED` và ghi nhật ký kiểm toán |
 | | `GET /api/v1/accounts/{id}/status-history` | `ADMIN` / Owner | Xem lịch sử chuyển đổi trạng thái tài khoản (`core.account_status_history`) |
@@ -167,7 +167,7 @@ curl -s -L "http://localhost:8080/api/v1/reports/export?format=PDF&period=QUARTE
 | | `GET /api/v1/transactions/{id}` | `ADMIN` / Owner | Xem chi tiết giao dịch theo ID |
 | | `PATCH /api/v1/transactions/{id}` | `ADMIN` | Cập nhật `description`/`location`, từ chối sửa `amount`/`type`/`account` (`400`) |
 | | `DELETE /api/v1/transactions/{id}` | `ADMIN` | Đảo giao dịch bút toán đối ứng (`REVERSAL`), bảo toàn lịch sử kiểm toán |
-| | `GET /api/v1/transactions` | `ADMIN` | Tìm kiếm giao dịch nâng cao (`accountId`, `type`, `status`, `minAmount`, `maxAmount`, `fromDate`, `toDate`, `keyword`) |
+| | `GET /api/v1/transactions` | `ADMIN` | Tìm kiếm giao dịch nâng cao (`accountId`, `type`, `status`, `minAmount`, `maxAmount`, `fromDate`, `toDate`) |
 | **Recurring** | `POST /api/v1/recurring-transactions` | `ADMIN` / Owner | Thiết lập lịch giao dịch định kỳ (`DAILY`, `WEEKLY`, `MONTHLY`) |
 | | `GET /api/v1/recurring-transactions/{id}` | `ADMIN` / Owner | Xem chi tiết lịch giao dịch định kỳ |
 | | `GET /api/v1/recurring-transactions` | `ADMIN` / Owner | Danh sách lịch giao dịch định kỳ (tự động lọc theo tài khoản sở hữu với `CUSTOMER`) |
@@ -194,53 +194,55 @@ curl -s -L "http://localhost:8080/api/v1/reports/export?format=PDF&period=QUARTE
 
 | Mã | Yêu cầu Đề bài | Giải pháp Kỹ thuật & Module Thực thi | Bài Kiểm thử Xác minh |
 |---|---|---|---|
-| `G-01`..`G-06` | RESTful API, PostgreSQL, Kiến trúc rõ ràng, Unit/IT Tests, Tối ưu DB, Hướng mở rộng | Modular Monolith 9 modules, Flyway `V1`–`V14`, RFC 9457 `ProblemDetail`, OpenAPI 3, 520 tests (92.74% line coverage) | Toàn bộ `*Test.java` & `*IT.java` |
-| `L1-01` | Thêm mới khách hàng | `CustomerService.createCustomer`, sinh mã `CUS...` từ sequence, kiểm tra trùng CCCD (`409`) | `CustomerServiceTest`, `CustomerControllerIT` |
-| `L1-02` | Sửa / xóa khách hàng | Khóa lạc quan `@Version`, xóa mềm `deleted_at`, chặn xóa khi còn tài khoản chưa đóng (`409 CUSTOMER_HAS_ACTIVE_ACCOUNTS`) | `CustomerServiceTest`, `CustomerControllerIT` |
-| `L1-03` | Tìm kiếm khách hàng | Tìm theo ID, mã khách hàng, từ khóa tên/CCCD/email/SĐT và lọc theo `location` | `CustomerControllerIT` |
-| `L1-04` | Tạo tài khoản ngân hàng | Sinh số tài khoản 12 chữ số kiểm tra thuật toán Luhn, kiểm tra `dailyLimit >= transactionLimit > 0` | `LuhnAccountNumberGeneratorTest`, `AccountControllerIT` |
-| `L1-05` | Sửa / đóng tài khoản | `PATCH` hạn mức (chặn sửa số dư/chủ TK qua `@JsonAnySetter`), đóng TK khi `balance = 0` | `AccountServiceTest`, `AccountControllerIT` |
-| `L1-06` | Tìm kiếm tài khoản | Lọc theo `customerId`, `status`, `tier` (`LOW`/`MEDIUM`/`HIGH`), khoảng số dư | `AccountControllerIT` |
-| `L1-07` | Giao dịch Nạp / Rút / Chuyển / Thanh toán | Khóa bi quan `SELECT ... FOR UPDATE` theo thứ tự ID tăng dần, `lock_timeout = 3s`, tính phí bậc thang `TreeMap`, kiểm tra hạn mức lần & ngày | `TransactionServiceTest`, `DepositTransactionIT`, `WithdrawalTransferPaymentIT`, `TransferConcurrencyIT` |
-| `L1-08` | Sửa thông tin / Hủy (Đảo) giao dịch | `PATCH` mô tả/địa điểm; `DELETE` tạo bút toán đảo đối ứng `REVERSAL` (`reversal_of_id UNIQUE`), hoàn tiền + phí nguyên tử | `TransactionPatchReversalIT` |
-| `L1-09` | Thống kê tài khoản & giao dịch theo số dư (`LOW`, `MEDIUM`, `HIGH`) | Truy vấn CTE một lần (`StatisticsRepository.getBalanceTierStatistics`) phân nhóm `< 10M`, `10M–<100M`, `>= 100M VND` | `StatisticsControllerIT` |
-| `L1-10` | Thống kê khách hàng theo địa điểm | Gom nhóm SQL trên partial expression index `idx_customer_location` | `StatisticsControllerIT` |
+| `G-01`..`G-06` | RESTful API, PostgreSQL, Kiến trúc rõ ràng, Unit/IT Tests, Tối ưu DB, Hướng mở rộng | Modular Monolith 8 module, Flyway `V1`–`V14`, RFC 9457 `ProblemDetail`, OpenAPI 3, 523 test (92,9% dòng, CI) | Toàn bộ `*Test.java` & `*IT.java` |
+| `L1-01` | Thêm mới khách hàng | `CustomerService.createCustomer`, sinh mã `CUS...` từ sequence, kiểm tra trùng CCCD (`409`) | `CustomerServiceTest`, `CustomerControllerTest` |
+| `L1-02` | Sửa / xóa khách hàng | Khóa lạc quan `@Version`, xóa mềm `deleted_at`, chặn xóa khi còn tài khoản chưa đóng (`409 CUSTOMER_HAS_ACTIVE_ACCOUNTS`) | `CustomerServiceTest`, `CustomerUpdateVersionIT`, `AccountCustomerDeletionGuardTest` |
+| `L1-03` | Tìm kiếm khách hàng | Xem theo ID; lọc theo tên (`name`), địa điểm (`location`), loại khách hàng (`customerTypeCode`), có phân trang | `CustomerControllerTest` |
+| `L1-04` | Tạo tài khoản ngân hàng | Sinh số tài khoản 12 chữ số kiểm tra thuật toán Luhn, kiểm tra `dailyLimit >= transactionLimit > 0` | `AccountNumberGeneratorTest`, `AccountControllerTest` |
+| `L1-05` | Sửa / đóng tài khoản | `PATCH` hạn mức (chặn sửa số dư/chủ TK qua `@JsonAnySetter`), đóng TK khi `balance = 0` | `AccountServiceTest`, `AccountControllerTest` |
+| `L1-06` | Tìm kiếm tài khoản | Lọc theo `customerId`, `status`, `accountNumber`; mỗi tài khoản trả kèm nhóm số dư `balanceTier` (`LOW`/`MEDIUM`/`HIGH`) | `AccountControllerTest` |
+| `L1-07` | Giao dịch Nạp / Rút / Chuyển / Thanh toán | Khóa bi quan `SELECT ... FOR UPDATE` theo thứ tự ID tăng dần, `lock_timeout = 3s`, tính phí bậc thang `TreeMap`, kiểm tra hạn mức lần & ngày | `TransactionServiceTest`, `DepositConcurrencyIT`, `Level1CoreBankingE2EIT`, `TransferConcurrencyIT` |
+| `L1-08` | Sửa thông tin / Hủy (Đảo) giao dịch | `PATCH` mô tả/địa điểm; `DELETE` tạo bút toán đảo đối ứng `REVERSAL` (`reversal_of_id UNIQUE`), hoàn tiền + phí nguyên tử | `TransactionReversalIT` |
+| `L1-09` | Thống kê tài khoản & giao dịch theo số dư (`LOW`, `MEDIUM`, `HIGH`) | Truy vấn CTE một lần (`StatisticsRepository.getBalanceTierStatistics`) phân nhóm `< 10M`, `10M–<100M`, `>= 100M VND` | `StatisticsIntegrationTest` |
+| `L1-10` | Thống kê khách hàng theo địa điểm | Gom nhóm SQL trên partial expression index `idx_customer_location` | `StatisticsIntegrationTest` |
 
 ### 5.2. Level 2 — Bảo mật, Tìm kiếm Nâng cao, Định kỳ & Cache (8/8 Hoàn thành)
 
 | Mã | Yêu cầu Đề bài | Giải pháp Kỹ thuật & Module Thực thi | Bài Kiểm thử Xác minh |
 |---|---|---|---|
-| `L2-01` | Đăng nhập & Xác thực JWT | `AuthController` (`/login`, `/refresh`, `/logout`), JWT HS256, xoay vòng Refresh Token nguyên tử `GETDEL` phát hiện tái sử dụng (`401 TOKEN_REUSED`), Rate Limiter Lua `INCR+EXPIRE` (`429`) | `JwtAuthAndIdempotencyIsolationIT`, `RefreshTokenAndRateLimitIT`, `ScaleAndHardeningUnitTest` |
-| `L2-02` | Phân quyền `ADMIN` & `CUSTOMER` (Chống IDOR) | `@PreAuthorize` kết hợp `OwnershipGuard` kiểm tra quyền sở hữu tài khoản/giao dịch $O(1)$ (`403 ACCESS_DENIED`) | `CustomerAuthorizationIT` |
-| `L2-03` | Tìm kiếm giao dịch theo khoảng thời gian | Quy đổi `fromDate`/`toDate` theo múi giờ `Asia/Ho_Chi_Minh` sang nửa khoảng mở `[fromInstant, toExclusiveInstant)` | `TransactionAdvancedSearchIT` |
-| `L2-04` | Lọc giao dịch kết hợp nhiều tiêu chí | Kết hợp `accountId`, `type`, `status`, `minAmount`, `maxAmount`, `fromDate`, `toDate`, `keyword` trên index `V4`/`V9` + Keyset Pagination `V14` | `TransactionAdvancedSearchIT`, `ScaleAndHardeningIT` |
-| `L2-05` | Quản lý vòng đời trạng thái tài khoản (`ACTIVE`, `LOCKED`, `CLOSED`) | FSM trong `Account.transitionStatus`, ghi bảng lịch sử bất biến `core.account_status_history` (`V10`) và nhật ký kiểm toán `core.audit_log` (`V14`) | `AccountStatusLifecycleIT`, `ScaleAndHardeningIT` |
-| `L2-06` | Thiết lập giao dịch định kỳ (`DAILY`, `WEEKLY`, `MONTHLY`) | `RecurringTransactionService`, giữ ngày neo `anchorDay` cuối tháng (31/01 → 28/02 → 31/03), chặn đóng TK khi còn lịch `ACTIVE` | `RecurringTransactionSetupIT` |
+| `L2-01` | Đăng nhập & Xác thực JWT | `AuthController` (`/login`, `/refresh`, `/logout`), JWT HS256, xoay vòng Refresh Token nguyên tử `GETDEL` phát hiện tái sử dụng (`401 TOKEN_REUSED`), Rate Limiter Lua `INCR+EXPIRE` (`429`) | `SecurityIntegrationTest`, `IdempotencyIntegrationTest`, `RefreshTokenAndRateLimitIT`, `ScaleAndHardeningUnitTest` |
+| `L2-02` | Phân quyền `ADMIN` & `CUSTOMER` (Chống IDOR) | `@PreAuthorize` kết hợp `OwnershipGuard` kiểm tra quyền sở hữu tài khoản/giao dịch $O(1)$ (`403 ACCESS_DENIED`) | `OwnershipIntegrationTest` |
+| `L2-03` | Tìm kiếm giao dịch theo khoảng thời gian | Quy đổi `fromDate`/`toDate` theo múi giờ `Asia/Ho_Chi_Minh` sang nửa khoảng mở `[fromInstant, toExclusiveInstant)` | `TransactionSearchIntegrationTest` |
+| `L2-04` | Lọc giao dịch kết hợp nhiều tiêu chí | Kết hợp `accountId`, `type`, `status`, `minAmount`, `maxAmount`, `fromDate`, `toDate` trên index `V4`/`V9` + Keyset Pagination `V14` | `TransactionSearchIntegrationTest`, `ScaleAndHardeningIT` |
+| `L2-05` | Quản lý vòng đời trạng thái tài khoản (`ACTIVE`, `LOCKED`, `CLOSED`) | FSM trong `Account.transitionStatus`, ghi bảng lịch sử bất biến `core.account_status_history` (`V10`) và nhật ký kiểm toán `core.audit_log` (`V14`) | `AccountStatusLifecycleIntegrationTest`, `ScaleAndHardeningIT` |
+| `L2-06` | Thiết lập giao dịch định kỳ (`DAILY`, `WEEKLY`, `MONTHLY`) | `RecurringTransactionService`, giữ ngày neo `anchorDay` cuối tháng (31/01 → 28/02 → 31/03), chặn đóng TK khi còn lịch `ACTIVE` | `RecurringTransactionSetupIntegrationTest` |
 | `L2-07` | Tự động thực thi giao dịch định kỳ | Bảo vệ 2 lớp: khóa phân tán cụm `SchedulerLockService` (`core.shedlock`) + `FOR UPDATE SKIP LOCKED` trên `idx_rec_due` và cô lập `REQUIRES_NEW` | `RecurringTransactionSchedulerIT`, `ScaleAndHardeningIT` |
-| `L2-08` | Cache kết quả truy vấn thường xuyên | Cache 2 tầng (`Redis 7` + fallback `Caffeine`/DB qua `ResilientCacheErrorHandler`), xóa cache ở pha `AFTER_COMMIT` | `QueryCachingIT` |
+| `L2-08` | Cache kết quả truy vấn thường xuyên | Cache 2 tầng (`Redis 7` + fallback `Caffeine`/DB qua `ResilientCacheErrorHandler`), xóa cache ở pha `AFTER_COMMIT` | `CacheFallbackIT` |
 
 ### 5.3. Level 3 — Phân loại Khách hàng, Báo cáo, Gian lận, Xuất File & Observability (10/10 Hoàn thành)
 
 | Mã | Yêu cầu Đề bài | Giải pháp Kỹ thuật & Module Thực thi | Bài Kiểm thử Xác minh |
 |---|---|---|---|
 | `L3-01` | Báo cáo giao dịch theo Tuần, Quý, Năm | `ReportRepository.getPeriodicTransactionReport` dùng `date_trunc('week'\|'quarter'\|'year', created_at AT TIME ZONE 'Asia/Ho_Chi_Minh')` | `PeriodicTransactionReportIT` |
-| `L3-02` | Chuỗi dữ liệu xu hướng số lượng GD & biến động số dư | `generate_series` kết hợp hàm cửa sổ tích lũy ngược (`Reverse Cumulative Sum`) tái dựng số dư cuối mỗi kỳ | `TrendReportAndChartIT` |
-| `L3-03` | Phát hiện giao dịch bất thường (`AMOUNT_THRESHOLD` & `VELOCITY`) | Đánh giá thời gian thực `@Async` trên Virtual Threads (`AFTER_COMMIT`) + quét lịch sử bằng SQL Window Function `RANGE ... PRECEDING` | `RealTimeAnomalyDetectionIT`, `AlertManagementAndFraudScanIT` |
-| `L3-04` | Lưu trữ & quản lý cảnh báo bất thường | Bảng `core.alert` (`V13`), API lọc và chuyển trạng thái `NEW -> INVESTIGATING -> RESOLVED \| FALSE_POSITIVE` kèm kiểm toán `core.audit_log` | `AlertManagementAndFraudScanIT`, `ScaleAndHardeningIT` |
-| `L3-05` | Phân loại khách hàng (`INDIVIDUAL`, `BUSINESS`) | Bảng `core.customer_type` (`V12`), gán và nâng cấp phân loại khách hàng kèm kiểm tra khóa lạc quan | `CustomerClassificationAndLimitIT` |
-| `L3-06` | Áp dụng trần hạn mức theo từng loại khách hàng | `CustomerTypeLimitProvider` kiểm tra hạn mức hiệu lực $\min(\text{accountLimit}, \text{customerTypeMaxLimit})$ cả khi mở/sửa TK và khi giao dịch | `CustomerClassificationAndLimitIT` |
-| `L3-07` | Xuất báo cáo ra file Excel (`.xlsx`) hoặc PDF (`.pdf`) | `ExcelReportExporter` (`SXSSFWorkbook(100)` + JDBC cursor streaming) và `PdfReportExporter` (`OpenPDF 2.0.2` + font Unicode `DejaVuSans`) | `ExcelReportExportIT`, `PdfReportExportIT` |
+| `L3-02` | Chuỗi dữ liệu xu hướng số lượng GD & biến động số dư | `generate_series` kết hợp hàm cửa sổ tích lũy ngược (`Reverse Cumulative Sum`) tái dựng số dư cuối mỗi kỳ | `TrendReportIT`, `ChartRendererTest` |
+| `L3-03` | Phát hiện giao dịch bất thường (`AMOUNT_THRESHOLD` & `VELOCITY`) | Đánh giá thời gian thực `@Async` trên Virtual Threads (`AFTER_COMMIT`) + quét lịch sử bằng SQL Window Function `RANGE ... PRECEDING` | `AnomalyDetectionIntegrationTest`, `AlertManagementAndScanIT` |
+| `L3-04` | Lưu trữ & quản lý cảnh báo bất thường | Bảng `core.alert` (`V13`), API lọc và chuyển trạng thái `NEW -> INVESTIGATING -> RESOLVED \| FALSE_POSITIVE` kèm kiểm toán `core.audit_log` | `AlertManagementAndScanIT`, `ScaleAndHardeningIT` |
+| `L3-05` | Phân loại khách hàng (`INDIVIDUAL`, `BUSINESS`) | Bảng `core.customer_type` (`V12`), gán và nâng cấp phân loại khách hàng kèm kiểm tra khóa lạc quan | `CustomerTypeLimitsIntegrationTest` |
+| `L3-06` | Áp dụng trần hạn mức theo từng loại khách hàng | `CustomerTypeLimitProvider` kiểm tra hạn mức hiệu lực $\min(\text{accountLimit}, \text{customerTypeMaxLimit})$ cả khi mở/sửa TK và khi giao dịch | `CustomerTypeLimitsIntegrationTest` |
+| `L3-07` | Xuất báo cáo ra file Excel (`.xlsx`) hoặc PDF (`.pdf`) | `ExcelReportExporter` (`SXSSFWorkbook(100)` + JDBC cursor streaming) và `PdfReportExporter` (`OpenPDF 2.0.3` + font Unicode `DejaVuSans`) | `ExcelReportExportIT`, `PdfReportExportIT` |
 | `L3-08` | Nhúng biểu đồ xu hướng vào file báo cáo xuất ra | `ChartRenderer` (`JFreeChart` headless) vẽ 3 biểu đồ PNG `800x400` nhúng trực tiếp vào sheet `Bieu do` (`.xlsx`) và trang báo cáo (`.pdf`) | `ExcelReportExportIT`, `PdfReportExportIT` |
 | `L3-09` | Tích hợp Spring Boot Actuator & Micrometer Metrics | `/actuator/health` (`show-details: when_authorized`), `/actuator/metrics` (`ADMIN`-only), bộ đếm `banking.transactions`, `banking.alerts.raised`, `banking.recurring.executed` | `ActuatorMetricsAndVirtualThreadsIT` |
 | `L3-10` | Đa luồng hiệu năng cao với Java 21 Virtual Threads | Bật `spring.threads.virtual.enabled=true`, thực thi `@Async` trên `SimpleAsyncTaskExecutor(virtualThreads=true)`, thay thế toàn bộ `synchronized` bằng `ReentrantLock` | `ActuatorMetricsAndVirtualThreadsIT`, `TransferConcurrencyIT` |
 
 ### 5.4. Tóm tắt Kết quả Đo Hiệu năng Thực nghiệm (PostgreSQL 17 & Concurrency — [perf/RESULTS.md](perf/RESULTS.md))
 
-| Hạng mục Kiểm chứng | Quy mô Dữ liệu / Tải | Trước Tối ưu | Sau Tối ưu (Index `V8`/`V9`/`V14`) | Kết quả |
+Đo bằng `EXPLAIN (ANALYZE, BUFFERS)` trên MacBook (i7-9750H, 16 GB, PostgreSQL 17.11) với 1.000.024 giao dịch. Chạy lại: `psql -d <db> -f perf/seed-large.sql` rồi `psql -d <db> -f perf/explain-benchmark.sql`. Kết quả thô: [perf/explain-macbook-2026-10-19.txt](perf/explain-macbook-2026-10-19.txt).
+
+| Hạng mục Kiểm chứng | Quy mô Dữ liệu / Tải | Không index / `OFFSET` | Có index / keyset | Kết quả |
 |---|---|---|---|---|
-| **Tìm kiếm giao dịch đa bộ lọc (`L2-03`/`L2-04`)** | **1.000.000 giao dịch** (`perf/seed-large.sql`) | `121,007 ms` (`Parallel Seq Scan`, `21.740` buffers) | **`0,937 ms`** (`Index Scan` trên `idx_tx_src_type_created` `V9`, `44` buffers) | Nhanh gấp **129,1 lần** (giảm 99,8% I/O) |
-| **Truy vấn tổng hạn mức ngày (`sumOutgoingAmountSince`)** | **1.000.000 giao dịch** (`core.transaction`) | `51,280 ms` (`Index Scan` + Heap Fetch) | **`0,179 ms`** (`Index-Only Scan` trên covering index `V8`, `Heap Fetches: 0`) | Nhanh gấp **286,5 lần** |
-| **Phân trang lịch sử sâu (`Keyset Pagination` — `Story 6.1`)** | Trang thứ **25.000** (`OFFSET 500.000`) | `~85 ms` ($O(N)$ quét bỏ 500k dòng) | **`~0,21 ms`** ($O(\log N)$ `Index Scan` trên `idx_tx_src_keyset` `V14`, không tốn `COUNT(*)`) | Độ trễ hằng số $O(\log N)$ |
+| **Lịch sử giao dịch của 1 tài khoản (30 ngày, `LIMIT 20`)** | **1.000.024 giao dịch** (`perf/seed-large.sql`) | `98,2 ms` (`Parallel Seq Scan`, ~24.500 trang) | **`0,084 ms`** (`BitmapOr` trên `idx_tx_src_keyset` + `idx_tx_tgt_keyset` `V14`, 16 trang) | Nhanh hơn ~1.000 lần |
+| **Tổng tiền ra trong ngày (`sumOutgoingAmountSince`)** | **1.000.024 giao dịch** | `95,7 ms` (`Parallel Seq Scan`) | **`0,041 ms`** (`Index Only Scan` trên `idx_tx_source_completed_created_amount` `V8`) | Không phải đọc bảng |
+| **Phân trang sâu (`Keyset Pagination`)** | Trang ở dòng thứ **500.000** | `OFFSET 500000`: `89,8 ms` (đọc qua 500.020 dòng index) | **`0,039 ms`** (keyset trên `idx_tx_created_id_keyset` `V14`, đọc 20 dòng) | Thời gian không tăng theo độ sâu trang |
 | **Chuyển khoản đồng thời đa tài khoản (`TransferConcurrencyIT`)** | **100 lệnh chuyển đồng thời** (25 worker threads, 10 tài khoản) + **10 luồng đối xứng `A ↔ B`** | Dễ xảy ra Deadlock nếu khóa theo thứ tự nguồn → đích | **0 Deadlock**, **0 Lost Update**, tổng số dư + phí bảo toàn chính xác tuyệt đối đến từng xu (`0.00 VND` sai lệch) | Đạt 100% tính đúng đắn ACID |
 
 ---
