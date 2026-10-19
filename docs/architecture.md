@@ -15,23 +15,23 @@ Hệ thống được chia thành 9 module nghiệp vụ độc lập bên trong
 ```mermaid
 flowchart TD
     subgraph API_Security["Tầng Bảo mật & Xác thực"]
-        AUTH["auth\n(JWT HS256, Refresh Token Rotation,\nLogin Rate Limiter, OwnershipGuard)"]
+        AUTH["auth (JWT HS256, Refresh Token Rotation, Rate Limiter, OwnershipGuard)"]
     end
 
     subgraph Core_Ledger["Tầng Sổ cái Cốt lõi (Level 1)"]
-        CUST["customer\n(Customer, CustomerType,\nSoft Delete, Masking)"]
-        ACC["account\n(Account, Status FSM,\nAccountStatusHistory, ClosureGuard)"]
-        TX["transaction\n(TransactionService, Pessimistic Lock,\nTieredFeePolicy, LimitPolicy, Idempotency)"]
+        CUST["customer (Customer, CustomerType, Soft Delete, Masking)"]
+        ACC["account (Account, Status FSM, AccountStatusHistory, ClosureGuard)"]
+        TX["transaction (TransactionService, Pessimistic Lock, TieredFeePolicy, LimitPolicy, Idempotency)"]
     end
 
     subgraph Automation_Analytics["Tầng Tự động hóa, Cảnh báo & Báo cáo (Level 2 & 3)"]
-        REC["recurring\n(RecurringTransactionJob,\nSKIP LOCKED, RecurringExecutor)"]
-        FRAUD["fraud\n(AnomalyRuleChain, AmountThresholdRule,\nVelocityRule ZSET, FraudScanRepository)"]
-        REP["report\n(StatisticsRepository, ReportRepository,\nChartRenderer, SXSSF/PDF ReportExporter)"]
-        CACHE["cache\n(RedisCacheManager, Caffeine Fallback,\nResilientCacheErrorHandler, AFTER_COMMIT Eviction)"]
+        REC["recurring (RecurringTransactionJob, SKIP LOCKED, RecurringExecutor)"]
+        FRAUD["fraud (AnomalyRuleChain, AmountThresholdRule, VelocityRule ZSET, FraudScanRepository)"]
+        REP["report (StatisticsRepository, ReportRepository, ChartRenderer, SXSSF/PDF ReportExporter)"]
+        CACHE["cache (RedisCacheManager, Caffeine Fallback, ResilientCacheErrorHandler, AFTER_COMMIT Eviction)"]
     end
 
-    COMMON["common\n(Money, BusinessRuleException, GlobalExceptionHandler RFC 9457, AsyncConfig)"]
+    COMMON["common (Money, BusinessRuleException, GlobalExceptionHandler RFC 9457, AsyncConfig)"]
 
     ACC --> CUST
     TX --> ACC
@@ -72,7 +72,7 @@ sequenceDiagram
 
     Client->>Filter: POST /api/v1/transactions/transfers (Bearer JWT + Idempotency-Key)
     Filter->>Idem: executeIdempotent(scope, key, requestHash)
-    Idem->>PG: pg_try_advisory_xact_lock(hash64(scope, key))
+    Idem->>PG: pg_advisory_xact_lock(hashtext(scope), hashtext(key))
     Idem->>PG: SELECT * FROM core.idempotency_key WHERE scope=? AND idem_key=?
     alt Key đã tồn tại & cùng requestHash
         Idem-->>Client: HTTP 201 + Header "Idempotent-Replayed: true"
@@ -109,14 +109,14 @@ flowchart LR
     end
 
     subgraph Edge["Cổng Bảo mật HTTPS"]
-        Funnel["Tailscale Funnel TLS :8443\n(hoặc Render / Vercel HTTPS)"]
-        Caddy["Caddy Gate Reverse Proxy\n(X-Demo-Key / Cookie Gate + HSTS)"]
+        Funnel["Tailscale Funnel TLS :8443 (hoặc Render / Vercel HTTPS)"]
+        Caddy["Caddy Gate Reverse Proxy (X-Demo-Key / Cookie Gate + HSTS)"]
     end
 
     subgraph Runtime["Docker Compose / Cloud Runtime"]
-        App["Spring Boot 3.5.16\n(Temurin 21 JRE, Virtual Threads,\nnon-root appuser, fontconfig)"]
-        PG[("PostgreSQL 17\nSchema: core\nFlyway V1..V13")]
-        Redis[("Redis 7 Alpine\n(Cache, Rate Limit, Refresh Token,\nVelocity ZSET)\n+ Fallback Caffeine/In-Memory")]
+        App["Spring Boot 3.5.16 (Temurin 21 JRE, Virtual Threads, non-root appuser, fontconfig)"]
+        PG[("PostgreSQL 17 Schema: core (Flyway V1..V13)")]
+        Redis[("Redis 7 Alpine (Cache, Rate Limit, Refresh Token, Velocity ZSET) + Fallback Caffeine")]
     end
 
     Browser --> Funnel

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Level 2 — Security, Search & Automation:**
-  - Stateless JWT authentication (`HS256`), role-based access control (`ADMIN`, `TELLER`, `CUSTOMER`), user-scoped `Idempotency-Key` isolation, and `AdminBootstrapRunner` (`V7__app_user.sql`, #25).
+  - Stateless JWT authentication (`HS256`), role-based access control (`ADMIN`, `CUSTOMER`), user-scoped `Idempotency-Key` isolation, and `AdminBootstrapRunner` (`V7__app_user.sql`, #25).
   - Level 1 concurrency, idempotency 64-bit advisory lock, `PATCH` immutable-field protection (`@JsonAnySetter`), and partial covering index `idx_tx_source_completed_created_amount` (`V8`, #26).
   - Customer self-service endpoints (`GET /api/v1/me`, `GET /api/v1/me/accounts`) and `OwnershipGuard` IDOR protection across accounts and transactions (#27).
   - Multi-filter transaction search (`status`, `minAmount`, `maxAmount`, `fromDate`, `toDate` in `Asia/Ho_Chi_Minh`) with composite indexes `idx_tx_status_created` and `idx_tx_amount_created` (`V9`, #28).
@@ -26,10 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Alert management API (`GET/POST /api/v1/alerts` with status FSM `NEW -> INVESTIGATING -> RESOLVED | FALSE_POSITIVE`) and historical batch fraud scan (`POST /api/v1/fraud/scans`) using PostgreSQL `RANGE ... PRECEDING` window functions (#37).
   - System and per-account trend series (`GET /api/v1/reports/trends` using `generate_series` and reverse cumulative window functions) and headless `JFreeChart` PNG rendering (`800x400`) (#38).
   - Streaming Excel report export (`GET /api/v1/reports/export?format=XLSX`, 3 sheets `Tong hop`, `Chi tiet`, `Bieu do` with embedded PNG charts) using `SXSSFWorkbook(100)`, JDBC cursor streaming (`fetchSize = 1000`), and `StreamingResponseBody` (#39).
-  - Spring Boot Actuator security hardening, custom Micrometer business metrics (`banking.transactions`, `banking.alerts.raised`, `banking.recurring.executed`), Java 21 Virtual Threads anti-pinning verification (`ReentrantLock`), and bounded HikariCP pool sizing.
+  - Streaming PDF report export (`GET /api/v1/reports/export?format=PDF`) using `OpenPDF 2.0.2` with embedded `DejaVuSans` Vietnamese Unicode fonts, 3 embedded PNG trend charts, and a 1,000-row detail table cap (#41).
+  - Spring Boot Actuator security hardening, custom Micrometer business metrics (`banking.transactions`, `banking.alerts.raised`, `banking.recurring.executed`), Java 21 Virtual Threads anti-pinning verification (`ReentrantLock`), and bounded HikariCP pool sizing (#40).
 - **Delivery, Coverage & Security Scanning:**
   - Automated GitHub Pages JaCoCo coverage report publication (`coverage-pages.yml`), CodeQL SAST & Dependency Vulnerability Review (`security.yml`), and weekly Dependabot configuration (`dependabot.yml`).
-  - Complete Vietnamese technical documentation (`README.md`, `docs/erd.md`, `docs/adr.md` `ADR-001`–`ADR-015`, and `docs/dev-notes/`).
+  - Complete Vietnamese technical documentation (`README.md`, `docs/architecture.md`, `docs/erd.md`, `docs/adr.md` `ADR-001`–`ADR-015`, and `docs/dev-notes/`) (#42).
 
 ## [0.1.0] - 2026-10-14
 

@@ -35,7 +35,7 @@ Tài liệu này tổng hợp các quyết định thiết kế kiến trúc c�
 - **Quyết định:** Thống nhất toàn bộ phản hồi lỗi qua `GlobalExceptionHandler` theo chuẩn **RFC 9457 (`application/problem+json`)** kèm trường mở rộng `code`, `requestId`, `timestamp`, `errors`. Mọi thông tin CCCD/CMND và số tài khoản khi ghi log đều đi qua `MaskingUtils`.
 
 ## ADR-008: Xác thực Stateless JWT (HS256) Kết hợp Xoay vòng Refresh Token Phát hiện Tái sử dụng
-- **Bối cảnh:** Cần cơ chế xác thực vừa nhanh cho REST API (`ROLE_ADMIN`, `ROLE_TELLER`, `ROLE_CUSTOMER`), vừa có khả năng thu hồi phiên ngay lập tức khi phát hiện đánh cắp token.
+- **Bối cảnh:** Cần cơ chế xác thực vừa nhanh cho REST API (`ROLE_ADMIN`, `ROLE_CUSTOMER`), vừa có khả năng thu hồi phiên ngay lập tức khi phát hiện đánh cắp token.
 - **Quyết định:** Access Token dùng JWT HS256 thời hạn ngắn (15 phút); Refresh Token là chuỗi ngẫu nhiên 256-bit lưu dưới dạng mã băm một chiều `SHA-256` (`rt:{sha256}`) theo họ `familyId`. Khi phát hiện một Refresh Token cũ đã xoay vòng bị gửi lại (**Token Reuse Detection**), hệ thống lập tức thu hồi toàn bộ `familyId` và trả `401 TOKEN_REUSED`. Kèm bộ giới hạn tốc độ đăng nhập (`LoginRateLimiter`) chặn brute-force trước bước kiểm tra BCrypt (`429 TOO_MANY_REQUESTS`).
 
 ## ADR-009: Kiến trúc Cache Hai Tầng Tự Phục hồi (`Redis` + `Caffeine` Fallback) & Xóa Cache `AFTER_COMMIT`
