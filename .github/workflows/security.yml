@@ -1,0 +1,73 @@
+name: Security Scanning (CodeQL & Dependency Review)
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+      - prod
+  pull_request:
+    branches:
+      - dev
+      - main
+      - prod
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  codeql-sast:
+    name: CodeQL SAST (Java 21)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+          cache-dependency-path: 'backend/pom.xml'
+
+      - name: Ensure Maven Wrapper is executable
+        working-directory: backend
+        run: chmod +x mvnw
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
+      - name: Compile backend for CodeQL analysis
+        working-directory: backend
+        run: ./mvnw -B test-compile -DskipTests -Dspotless.check.skip=true -Dcheckstyle.skip=true
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:java-kotlin'
+
+  dependency-review:
+    name: Dependency Vulnerability Review (SCA)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run GitHub Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

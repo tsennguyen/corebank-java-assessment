@@ -81,6 +81,50 @@ class DeploymentConfigTest {
         assertThat(baseYaml).contains("SET lock_timeout = '3s'");
     }
 
+    @Test
+    @DisplayName(
+            "coverage-pages.yml, security.yml, and dependabot.yml enforce >=80% JaCoCo GitHub Pages"
+                + " report, CodeQL SAST, Dependency Review, and weekly Dependabot updates (Story"
+                + " 5.1 & 6.4: G-04, NC-04, NC-05, NC-13)")
+    void coveragePagesAndSecurityWorkflows_shouldEnforceJaCoCoGateCodeQlAndDependabot()
+            throws Exception {
+        Path coverageWorkflowPath = resolveRepoRootFile(".github/workflows/coverage-pages.yml");
+        String coverageWorkflow = Files.readString(coverageWorkflowPath, StandardCharsets.UTF_8);
+
+        assertThat(coverageWorkflow)
+                .contains("Publish JaCoCo Coverage Report to GitHub Pages")
+                .contains("pages: write")
+                .contains("id-token: write")
+                .contains("cache-dependency-path: 'backend/pom.xml'")
+                .contains("./mvnw -B verify -Pci")
+                .contains("actions/upload-pages-artifact@v3")
+                .contains("backend/target/site/jacoco")
+                .contains("actions/deploy-pages@v4");
+
+        Path securityWorkflowPath = resolveRepoRootFile(".github/workflows/security.yml");
+        String securityWorkflow = Files.readString(securityWorkflowPath, StandardCharsets.UTF_8);
+
+        assertThat(securityWorkflow)
+                .contains("Security Scanning (CodeQL & Dependency Review)")
+                .contains("security-events: write")
+                .contains("github/codeql-action/init@v3")
+                .contains("languages: java-kotlin")
+                .contains("github/codeql-action/analyze@v3")
+                .contains("actions/dependency-review-action@v4")
+                .contains("fail-on-severity: high");
+
+        Path dependabotPath = resolveRepoRootFile(".github/dependabot.yml");
+        String dependabot = Files.readString(dependabotPath, StandardCharsets.UTF_8);
+
+        assertThat(dependabot)
+                .contains("package-ecosystem: \"maven\"")
+                .contains("directory: \"/backend\"")
+                .contains("package-ecosystem: \"github-actions\"")
+                .contains("target-branch: \"dev\"")
+                .contains("interval: \"weekly\"")
+                .contains("dependencies");
+    }
+
     private static Path resolveBackendFile(String relativePath) {
         Path cwd = Path.of("").toAbsolutePath();
         if (Files.exists(cwd.resolve(relativePath))) {
