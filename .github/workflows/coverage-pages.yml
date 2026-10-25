@@ -46,7 +46,7 @@ jobs:
         run: ./mvnw -B verify -Pci
 
       - name: Setup GitHub Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Upload JaCoCo HTML Report Artifact
         uses: actions/upload-pages-artifact@v3
